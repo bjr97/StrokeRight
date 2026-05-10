@@ -1,31 +1,43 @@
 # StrokeRight — Fantasy Golf Pool
 
-A React web app implementing the spec in `../Golf_Pool_Platform_Spec_v2.md`.
+A React web app implementing the spec in `docs/Golf_Pool_Platform_Spec_v2.md`.
+
+## Setup (first time)
+
+```sh
+cd strokeright
+npm install
+cp .env.example .env       # paste your Supabase URL + anon key
+```
+
+Then **run the SQL schema in Supabase**:
+
+1. Open your Supabase project → SQL Editor → New query
+2. Paste the contents of `docs/supabase_schema.sql`
+3. Click Run. Safe to re-run.
 
 ## Run it
 
 ```sh
-cd strokeright
-npm install      # already done if you're seeing this
 npm run dev      # http://localhost:5173
 npm run build    # production bundle in dist/
 ```
 
-## Demo credentials (seeded on first run)
+## Loading demo data
 
-A 2026 Masters tournament with 12 entries is pre-seeded so the whole app is clickable immediately.
+There's no auto-seed. To populate the app with a demo 2026 Masters tournament for testing:
 
-- **Pool code:** `masters26`
-- **Admin code:** `admin`
-- **Sample participant names** in the seed: Charles D., Brooks T., Glenn M., Rielly K., Bryce W., Vishnu P., Dan O., Lily R.
+1. Open the app, click "Admin login →"
+2. Enter admin code (default: `admin`)
+3. Admin → Manage tab → "Load demo 2026 Masters tournament"
 
-Use any name + the pool code to log in as a participant. Click "Admin login →" on the auth screen and enter `admin` to manage tournaments.
+Pool code for the demo tournament is `masters26`. You can delete it any time from the same Manage tab.
 
 ## Architecture
 
 - **Framework:** Vite + React 18, Tailwind CSS, Recharts
-- **Persistence:** `localStorage`, wrapped in `src/lib/storage.js` to mirror the spec's `window.storage` API (same get/set/delete/list surface)
-- **No backend.** All scoring, ranking, payouts, and win-prob run client-side from `localStorage` data.
+- **Persistence:** Supabase Postgres with `localStorage` as a per-device write-through cache. `src/lib/storage.js` exposes a sync `get/set/delete/list` API that hydrates from Supabase on boot and mirrors writes back to Postgres asynchronously. Components stay sync — they don't know about the network.
+- **Auth:** Name + pool code, client-side check (no Supabase Auth yet; RLS policies are permissive — tighten when adding Auth).
 - **Live scores:** `src/lib/espnApi.js` fetches ESPN's public PGA scoreboard. Admin → "Live sync" floating button merges live data into the active tournament.
 - **Win probability:** `src/lib/winProb.js` implements the spec's weighted heuristic (gap + upside + odds) via softmax. The `anthropicWinProbability` function is a stub — call it through a server proxy for production (don't ship your API key in browser code).
 

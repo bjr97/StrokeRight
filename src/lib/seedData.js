@@ -77,8 +77,10 @@ const PAST_HISTORY = [
   { id: '2025-players',  name: '2025 The Players',      date: '2025-03-16', winner: 'Bryce W.',   team: ['Aberg', 'Koepka', 'Thomas', 'Finau', 'Lowry', 'Straka'],                points: 41, entries: 35, prize: 227.50 },
 ];
 
-export function seedIfEmpty() {
-  if (storage.get(keys.tournament(TOURNAMENT_ID))) return false;
+export function seedDemoMasters() {
+  if (storage.get(keys.tournament(TOURNAMENT_ID))) {
+    if (!confirm('Demo tournament already exists. Overwrite?')) return false;
+  }
   if (!storage.get(keys.adminCode)) storage.set(keys.adminCode, 'admin');
 
   storage.set(keys.tournament(TOURNAMENT_ID), {

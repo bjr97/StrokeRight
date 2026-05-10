@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { storage, keys, listTournaments, setActiveTournamentId, getActiveTournamentId } from '../lib/storage.js';
+import { seedDemoMasters } from '../lib/seedData.js';
 import { Card, Button, Input, Pill, TierDot, TIER_COLORS, fmtToPar } from '../components/ui.jsx';
 
 export default function Admin({ tournament, golfers, refreshAll }) {
@@ -78,7 +79,23 @@ function CreateTournament({ refreshAll }) {
 function ManageTournaments({ active, refreshAll }) {
   const all = listTournaments();
   const activeId = getActiveTournamentId();
-  if (!all.length) return <Card className="p-5 text-muted text-sm">No tournaments yet. Click "New" to create one.</Card>;
+
+  function loadDemo() {
+    if (!confirm('Load the demo 2026 Masters tournament into Supabase? This will be visible to everyone in your pool. You can delete it later.')) return;
+    seedDemoMasters();
+    setTimeout(refreshAll, 300);
+  }
+
+  if (!all.length) {
+    return (
+      <div className="space-y-3">
+        <Card className="p-5 text-muted text-sm">
+          No tournaments yet. Click <span className="text-text">New</span> to create one, or load demo data below to see the app populated.
+        </Card>
+        <Button variant="secondary" onClick={loadDemo}>Load demo 2026 Masters tournament</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { storage, keys, getActiveTournamentId } from './lib/storage.js';
-import { seedIfEmpty } from './lib/seedData.js';
+import { storage, keys, getActiveTournamentId, bootstrap, refresh } from './lib/storage.js';
+import { SUPABASE_READY } from './lib/supabase.js';
 import { fetchEspnScoreboard, normalizeEspn } from './lib/espnApi.js';
 
 import AuthGate from './components/AuthGate.jsx';
@@ -17,16 +17,35 @@ import { Card, Button, Input } from './components/ui.jsx';
 
 export default function App() {
   const [bootstrapped, setBootstrapped] = useState(false);
+  const [bootError, setBootError] = useState(null);
   const [page, setPage] = useState('home');
-  const [session, setSession] = useState(() => storage.get(keys.session));
+  const [session, setSession] = useState(null);
   const [adminPending, setAdminPending] = useState(false);
   const [tick, setTick] = useState(0);
 
-  // First-run seed
+  // Hydrate from Supabase on mount
   useEffect(() => {
-    seedIfEmpty();
-    setBootstrapped(true);
+    bootstrap()
+      .then(() => {
+        setSession(storage.get(keys.session));
+        setBootstrapped(true);
+      })
+      .catch((err) => {
+        console.error(err);
+        setBootError(err.message || 'Failed to load data from Supabase');
+        setBootstrapped(true);
+      });
   }, []);
+
+  // Pull fresh data when tab regains focus
+  useEffect(() => {
+    function onFocus() {
+      if (!bootstrapped || !SUPABASE_READY) return;
+      refresh().then(() => setTick((t) => t + 1)).catch(() => {});
+    }
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [bootstrapped]);
 
   const refreshAll = () => setTick((t) => t + 1);
 
@@ -77,7 +96,28 @@ export default function App() {
   }
 
   if (!bootstrapped) {
-    return <div className="min-h-screen flex items-center justify-center text-muted">Loading…</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted">
+        <div className="text-center">
+          <div className="animate-pulse">Loading pool data…</div>
+          {!SUPABASE_READY && <div className="text-xs mt-2">No Supabase config — local mode only</div>}
+        </div>
+      </div>
+    );
+  }
+
+  if (bootError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <Card className="max-w-md p-5">
+          <div className="text-danger font-medium mb-2">Could not connect to Supabase</div>
+          <div className="text-sm text-muted mb-3">{bootError}</div>
+          <div className="text-xs text-muted">
+            Did you run <code>docs/supabase_schema.sql</code> in the Supabase SQL editor? And does <code>.env</code> have your project URL + anon key?
+          </div>
+        </Card>
+      </div>
+    );
   }
 
   if (adminPending) {
