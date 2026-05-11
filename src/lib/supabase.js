@@ -1,10 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Trim defensively — copy-paste into Vercel/local env often appends a stray
-// newline or trailing space, which makes browsers reject the value as an
-// HTTP header ("Invalid value" error on Headers.set).
-const url = (import.meta.env.VITE_SUPABASE_URL || '').trim();
-const key = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+// Strip ALL whitespace defensively. When you paste a long JWT into Vercel's
+// env-var field, it often wraps mid-value and Vercel preserves the wrap as
+// literal newline + indent bytes inside the stored value. Browsers then
+// reject the value as an HTTP header ("Invalid value" on Headers.set).
+// JWTs and URLs contain zero valid whitespace, so /\s+/g is safe here.
+const url = (import.meta.env.VITE_SUPABASE_URL || '').replace(/\s+/g, '');
+const key = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').replace(/\s+/g, '');
 
 if (!url || !key) {
   console.warn('Supabase env missing. Copy .env.example → .env and fill in your project URL + anon key.');
