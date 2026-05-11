@@ -18,7 +18,7 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots })
     roundsRemaining: Math.max(0, 4 - (tournament.currentRound || 1)),
   }), [ranked, golfers, tournament]);
 
-  const { payouts, structure } = computePayouts(ranked, entries.length);
+  const { payouts, structure } = computePayouts(ranked, entries.length, tournament.entryFee);
 
   // Position change since last snapshot
   const prevRanks = useMemo(() => {

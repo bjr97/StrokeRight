@@ -1,10 +1,10 @@
 // Payout calculator. Scales with entry count, handles tie-splitting.
-// Entry fee fixed at $10/entry per spec.
+// Entry fee is per-tournament (defaults to $10 per the original spec).
 
-export const ENTRY_FEE = 10;
+export const DEFAULT_ENTRY_FEE = 10;
 
-export function payoutStructure(entryCount) {
-  const pool = entryCount * ENTRY_FEE;
+export function payoutStructure(entryCount, entryFee = DEFAULT_ENTRY_FEE) {
+  const pool = entryCount * entryFee;
   if (entryCount <= 9) {
     return { pool, tiers: [{ place: 1, pct: 1.0, amount: pool, label: 'Winner take all' }] };
   }
@@ -12,8 +12,8 @@ export function payoutStructure(entryCount) {
     return {
       pool,
       tiers: [
-        { place: 1, amount: pool - ENTRY_FEE, label: '1st (pool minus 2nd refund)' },
-        { place: 2, amount: ENTRY_FEE,        label: '2nd gets entry back' },
+        { place: 1, amount: pool - entryFee, label: '1st (pool minus 2nd refund)' },
+        { place: 2, amount: entryFee,        label: '2nd gets entry back' },
       ],
     };
   }
@@ -42,8 +42,8 @@ export function payoutStructure(entryCount) {
  * @param {number} entryCount
  * @returns {Map<entryId, number>} payout per entry id
  */
-export function computePayouts(rankedEntries, entryCount) {
-  const structure = payoutStructure(entryCount);
+export function computePayouts(rankedEntries, entryCount, entryFee = DEFAULT_ENTRY_FEE) {
+  const structure = payoutStructure(entryCount, entryFee);
   const payouts = new Map();
 
   // Group by rank

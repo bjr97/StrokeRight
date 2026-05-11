@@ -20,7 +20,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
     cutLine: tournament.cutLine,
     currentRound: tournament.currentRound,
   });
-  const { structure } = computePayouts(ranked, entries.length);
+  const { structure } = computePayouts(ranked, entries.length, tournament.entryFee);
   const leader = ranked[0];
   const myEntries = ranked.filter((r) => r.entry.name.toLowerCase() === session.name.toLowerCase());
 
