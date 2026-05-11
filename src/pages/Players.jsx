@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { rankEntries, scoreGolfer } from '../lib/scoring.js';
+import { picksRevealed, deadlineLabel } from '../lib/gating.js';
 import { Card, TierDot, StatusBadge, fmtToPar, Input } from '../components/ui.jsx';
 
-export default function Players({ tournament, golfers, entries, onNavToLeaderboard }) {
+export default function Players({ tournament, golfers, entries, onNavToLeaderboard, session }) {
+  const revealed = picksRevealed(tournament, session);
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState(null);
 
@@ -62,7 +64,8 @@ export default function Players({ tournament, golfers, entries, onNavToLeaderboa
                 <div className="min-w-0">
                   <div className="text-sm font-medium truncate">{g.name}</div>
                   <div className="text-xs text-muted">
-                    Today {fmtToPar(g.todayToPar)} · Thru {g.thru ?? '—'} · {pop} pick{pop === 1 ? '' : 's'} ({pct}%)
+                    Today {fmtToPar(g.todayToPar)} · Thru {g.thru ?? '—'}
+                    {revealed && <> · {pop} pick{pop === 1 ? '' : 's'} ({pct}%)</>}
                   </div>
                 </div>
               </div>
@@ -80,6 +83,10 @@ export default function Players({ tournament, golfers, entries, onNavToLeaderboa
             </button>
             {expanded === g.id && (
               <div className="border-t border-border bg-bg/40 px-3 py-2">
+                {!revealed ? (
+                  <div className="text-xs text-muted">🔒 Picks hidden until submissions lock at {deadlineLabel(tournament) || 'the deadline'}.</div>
+                ) : (
+                <>
                 <div className="text-xs text-muted uppercase tracking-wide mb-2">Picked by ({entriesPicking.length})</div>
                 {entriesPicking.length === 0 ? (
                   <div className="text-xs text-muted">No pool entries picked this golfer.</div>
@@ -104,6 +111,8 @@ export default function Players({ tournament, golfers, entries, onNavToLeaderboa
                       );
                     })}
                   </div>
+                )}
+                </>
                 )}
               </div>
             )}

@@ -135,9 +135,9 @@ export default function App() {
       <main key={tick} className="pb-20 md:pb-0">
         {page === 'home' && <Home tournament={tournament} golfers={golfers} entries={entries} session={session} onNav={setPage} />}
         {page === 'submit' && tournament && <Submit tournament={tournament} golfers={golfers} entries={entries} session={session} refreshAll={refreshAll} />}
-        {page === 'players' && tournament && <Players tournament={tournament} golfers={golfers} entries={entries} onNavToLeaderboard={() => setPage('leaderboard')} />}
-        {page === 'leaderboard' && tournament && <Leaderboard tournament={tournament} golfers={golfers} entries={entries} snapshots={snapshots} />}
-        {page === 'compare' && tournament && <Compare tournament={tournament} golfers={golfers} entries={entries} />}
+        {page === 'players' && tournament && <Players tournament={tournament} golfers={golfers} entries={entries} session={session} onNavToLeaderboard={() => setPage('leaderboard')} />}
+        {page === 'leaderboard' && tournament && <Leaderboard tournament={tournament} golfers={golfers} entries={entries} snapshots={snapshots} session={session} />}
+        {page === 'compare' && tournament && <Compare tournament={tournament} golfers={golfers} entries={entries} session={session} />}
         {page === 'trends' && tournament && <Trends tournament={tournament} golfers={golfers} entries={entries} snapshots={snapshots} session={session} />}
         {page === 'history' && <History session={session} refreshAll={refreshAll} />}
         {page === 'admin' && session.isAdmin && <Admin tournament={tournament} golfers={golfers} refreshAll={refreshAll} />}

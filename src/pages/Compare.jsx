@@ -1,8 +1,22 @@
 import React, { useMemo, useState } from 'react';
 import { rankEntries } from '../lib/scoring.js';
+import { picksRevealed, deadlineLabel } from '../lib/gating.js';
 import { Card, Pill } from '../components/ui.jsx';
 
-export default function Compare({ tournament, golfers, entries }) {
+export default function Compare({ tournament, golfers, entries, session }) {
+  if (!picksRevealed(tournament, session)) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-10">
+        <Card className="p-6 text-center">
+          <div className="text-warn font-medium mb-2">🔒 Comparison locked</div>
+          <div className="text-sm text-muted">
+            Other people's picks are hidden until submissions lock at <span className="text-text">{deadlineLabel(tournament) || 'the deadline'}</span>. Come back after — you'll be able to compare side-by-side with any entry then.
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   const ranked = useMemo(() => rankEntries(entries, golfers, {
     tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
     cutLine: tournament.cutLine,

@@ -2,11 +2,14 @@ import React, { useMemo, useState } from 'react';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
 import { computeWinProbabilities } from '../lib/winProb.js';
+import { picksRevealed, deadlineLabel } from '../lib/gating.js';
 import { Card, Stat, Pill, StatusBadge, TierDot, fmtToPar, Input } from '../components/ui.jsx';
 
-export default function Leaderboard({ tournament, golfers, entries, snapshots }) {
+export default function Leaderboard({ tournament, golfers, entries, snapshots, session }) {
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState(null);
+
+  const revealed = picksRevealed(tournament, session);
 
   const ranked = useMemo(() => rankEntries(entries, golfers, {
     tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
@@ -26,7 +29,13 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots })
     return new Map(lastSnap.map((s) => [s.entryId, s.rank]));
   }, [snapshots, tournament.currentRound]);
 
-  const filtered = ranked.filter((r) => !filter || r.entry.name.toLowerCase().includes(filter.toLowerCase()));
+  // Pre-deadline: alphabetize by name so order doesn't hint at scores.
+  // Post-deadline: keep the score-ranked order.
+  const list = revealed
+    ? ranked
+    : [...ranked].sort((a, b) => a.entry.name.localeCompare(b.entry.name));
+
+  const filtered = list.filter((r) => !filter || r.entry.name.toLowerCase().includes(filter.toLowerCase()));
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-32 md:pb-6 space-y-4">
@@ -36,48 +45,72 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots })
         <Stat label="Entries" value={entries.length} />
       </div>
 
+      {!revealed && (
+        <Card className="p-4 border-warn/40 bg-warn/5">
+          <div className="text-warn text-sm font-medium">🔒 Picks hidden until submissions lock</div>
+          <div className="text-xs text-muted mt-1">
+            Other entries become visible at {deadlineLabel(tournament) || 'the deadline'}. You can see who's submitted, but not their golfers.
+          </div>
+        </Card>
+      )}
+
       <Input value={filter} onChange={setFilter} placeholder="Filter by name…" />
 
       <div className="space-y-1">
-        {filtered.map((row, idx) => {
+        {filtered.map((row) => {
           const prevRank = prevRanks.get(row.entry.id);
           const change = prevRank ? prevRank - row.rank : 0;
           const payout = payouts.get(row.entry.id);
           const prob = probs.get(row.entry.id);
+          const isMine = row.entry.name.toLowerCase() === (session?.name || '').toLowerCase();
+          const showDetails = revealed || isMine;
+
           return (
             <Card key={row.entry.id} className="overflow-hidden">
               <button
-                onClick={() => setExpanded(expanded === row.entry.id ? null : row.entry.id)}
-                className="w-full text-left px-3 py-3 flex items-center justify-between hover:bg-bg transition"
+                onClick={() => showDetails && setExpanded(expanded === row.entry.id ? null : row.entry.id)}
+                className={`w-full text-left px-3 py-3 flex items-center justify-between transition ${showDetails ? 'hover:bg-bg cursor-pointer' : 'cursor-default'}`}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-6 text-center font-semibold tabular-nums text-muted">{row.rank}</span>
+                  {revealed ? (
+                    <span className="w-6 text-center font-semibold tabular-nums text-muted">{row.rank}</span>
+                  ) : (
+                    <span className="w-6 text-center text-muted">·</span>
+                  )}
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium truncate">{row.entry.name}</span>
                       <span className="text-xs text-muted">Entry {row.entry.entryNum}</span>
-                      {change > 0 && <span className="text-xs text-accent">↑{change}</span>}
-                      {change < 0 && <span className="text-xs text-danger">↓{-change}</span>}
+                      {isMine && !revealed && <Pill color="green">you</Pill>}
+                      {revealed && change > 0 && <span className="text-xs text-accent">↑{change}</span>}
+                      {revealed && change < 0 && <span className="text-xs text-danger">↓{-change}</span>}
                     </div>
-                    {payout > 0 && (
+                    {revealed && payout > 0 && (
                       <div className="text-xs text-accent">{fmtMoney(payout)} projected</div>
+                    )}
+                    {!revealed && (
+                      <div className="text-xs text-muted">{isMine ? 'tap to view your picks' : 'picks hidden'}</div>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  {prob != null && (
+                  {revealed && prob != null && (
                     <div className="text-right hidden sm:block">
                       <div className="text-xs text-muted">win</div>
                       <div className="text-sm tabular-nums">{(prob * 100).toFixed(1)}%</div>
                     </div>
                   )}
-                  <div className={`text-lg font-semibold tabular-nums ${row.total >= 0 ? 'text-accent' : 'text-danger'}`}>
-                    {row.total >= 0 ? `+${row.total}` : row.total}
-                  </div>
+                  {revealed ? (
+                    <div className={`text-lg font-semibold tabular-nums ${row.total >= 0 ? 'text-accent' : 'text-danger'}`}>
+                      {row.total >= 0 ? `+${row.total}` : row.total}
+                    </div>
+                  ) : (
+                    <div className="text-lg text-muted">—</div>
+                  )}
                 </div>
               </button>
 
-              {expanded === row.entry.id && (
+              {expanded === row.entry.id && showDetails && (
                 <div className="border-t border-border bg-bg/50 px-3 py-2 space-y-1">
                   {row.scored.map((s) => (
                     <div key={s.golfer.id} className="flex items-center justify-between text-sm py-1">
