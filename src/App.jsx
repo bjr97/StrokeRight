@@ -159,11 +159,43 @@ export default function App() {
 function AdminLogin({ onAuth, onCancel }) {
   const [code, setCode] = useState('');
   const [err, setErr] = useState('');
-  const stored = storage.get(keys.adminCode);
+  const [busy, setBusy] = useState(false);
 
-  function submit(e) {
+  async function submit(e) {
     e.preventDefault();
-    if (code !== stored) return setErr('Wrong admin code');
+    setErr('');
+    setBusy(true);
+
+    // 1. Try cache first (fast path)
+    let stored = storage.get(keys.adminCode);
+
+    // 2. Cache miss → re-fetch from Supabase live (resilient path)
+    if (stored == null && SUPABASE_READY) {
+      try {
+        const { supabase } = await import('./lib/supabase.js');
+        const { data, error } = await supabase
+          .from('app_config')
+          .select('value')
+          .eq('key', 'admin-code')
+          .maybeSingle();
+        if (error) throw error;
+        stored = data?.value ?? null;
+        if (stored != null) storage.set(keys.adminCode, stored);
+      } catch (e) {
+        console.error('[admin-code fetch]', e);
+        setBusy(false);
+        return setErr('Could not reach Supabase: ' + (e.message || 'unknown error'));
+      }
+    }
+
+    setBusy(false);
+
+    if (stored == null) {
+      return setErr('No admin code set. Re-run docs/supabase_schema.sql in the Supabase SQL editor.');
+    }
+    if (code !== stored) {
+      return setErr('Wrong admin code');
+    }
     storage.set(keys.session, { name: 'Admin', isAdmin: true });
     onAuth({ name: 'Admin', isAdmin: true });
   }
@@ -175,9 +207,9 @@ function AdminLogin({ onAuth, onCancel }) {
         <h1 className="text-lg font-semibold mb-4">Enter admin code</h1>
         <form onSubmit={submit} className="space-y-3">
           <Input type="password" value={code} onChange={setCode} placeholder="admin code" />
-          {err && <div className="text-sm text-danger">{err}</div>}
+          {err && <div className="text-sm text-danger break-words">{err}</div>}
           <div className="flex gap-2">
-            <Button type="submit">Enter</Button>
+            <Button type="submit" disabled={busy}>{busy ? 'Checking…' : 'Enter'}</Button>
             <Button variant="ghost" onClick={onCancel}>Back</Button>
           </div>
         </form>

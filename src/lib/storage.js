@@ -108,11 +108,12 @@ async function hydrate() {
   }
 
   if (!SUPABASE_READY) {
-    console.warn('Supabase not configured; running in localStorage-only mode.');
+    console.warn('[StrokeRight] Supabase env not configured. Running in localStorage-only mode.');
     bootstrapped = true;
     return;
   }
 
+  console.log('[StrokeRight] hydrating from Supabase…');
   const [tournR, golfR, entR, snapR, histR, cfgR] = await Promise.all([
     supabase.from('tournaments').select('*'),
     supabase.from('golfers').select('*'),
@@ -121,6 +122,17 @@ async function hydrate() {
     supabase.from('history').select('*').order('date', { ascending: false }),
     supabase.from('app_config').select('*'),
   ]);
+
+  for (const [label, r] of [
+    ['tournaments', tournR], ['golfers', golfR], ['entries', entR],
+    ['snapshots', snapR], ['history', histR], ['app_config', cfgR],
+  ]) {
+    if (r.error) {
+      console.error(`[StrokeRight] ${label} fetch error:`, r.error);
+    } else {
+      console.log(`[StrokeRight] ${label}: ${r.data?.length ?? 0} rows`);
+    }
+  }
 
   for (const row of tournR.data || []) {
     cache.set(`tournament:${row.id}`, fromTournamentRow(row));
