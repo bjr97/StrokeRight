@@ -26,10 +26,14 @@ export function normalizeEspn(raw) {
     const espnStatus = (c.status?.type?.name || '').toLowerCase();
     const won = !!c.winner;
 
+    // ESPN's per-player status.type.name is usually empty in the scoreboard endpoint,
+    // so we only set status when ESPN tells us something explicit. Defaulting to
+    // 'made_cut' post-R2 was wrong — it overwrites legitimate missed_cut entries.
+    // Cut detection happens out-of-band (admin or one-off script) and the merge
+    // in App.jsx preserves any non-'playing' status.
     let mappedStatus = 'playing';
     if (espnStatus.includes('cut')) mappedStatus = 'missed_cut';
     else if (espnStatus.includes('wd') || espnStatus.includes('withdrawn')) mappedStatus = 'withdrawn';
-    else if (currentRound > 2) mappedStatus = 'made_cut';
 
     return {
       id: athlete.id || athlete.shortName,
