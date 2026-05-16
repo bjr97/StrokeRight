@@ -95,7 +95,7 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
                 </div>
                 <div className="flex items-center gap-4">
                   {revealed && prob != null && (
-                    <div className="text-right hidden sm:block">
+                    <div className="text-right">
                       <div className="text-xs text-muted">win</div>
                       <div className="text-sm tabular-nums">{(prob * 100).toFixed(1)}%</div>
                     </div>
