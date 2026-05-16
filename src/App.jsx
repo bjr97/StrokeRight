@@ -61,12 +61,24 @@ export default function App() {
     try {
       const raw = await fetchEspnScoreboard();
       const { golfers: liveGolfers, currentRound, cutLine } = normalizeEspn(raw);
+      // Normalize names: lowercase + strip diacritics so "Aberg" matches "Åberg",
+      // "Hojgaard" matches "Højgaard", etc. ø/æ/ß aren't decomposable via NFKD,
+      // so they're mapped explicitly.
+      const FOLD = { 'ø':'o','æ':'ae','œ':'oe','ß':'ss','đ':'d','ł':'l','ð':'d','þ':'th' };
+      const normalizeName = (s) => (s || '')
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[̀-ͯ]/g, '')
+        .replace(/[øæœßđłðþ]/g, (c) => FOLD[c] || c);
+      // Statuses set by admin or cut logic — never let an ESPN sync revert these to "playing".
+      const TERMINAL = new Set(['made_cut', 'missed_cut', 'withdrawn']);
       // Merge: keep tier assignments, overlay live score fields by golfer NAME
-      const byName = new Map(liveGolfers.map((g) => [g.name.toLowerCase(), g]));
+      const byName = new Map(liveGolfers.map((g) => [normalizeName(g.name), g]));
       const merged = golfers.map((g) => {
-        const live = byName.get(g.name.toLowerCase());
+        const live = byName.get(normalizeName(g.name));
         if (!live) return g;
-        return { ...g, strokesToPar: live.strokesToPar, todayToPar: live.todayToPar, thru: live.thru, position: live.position, status: live.status, won: live.won };
+        const status = TERMINAL.has(g.status) ? g.status : live.status;
+        return { ...g, strokesToPar: live.strokesToPar, todayToPar: live.todayToPar, thru: live.thru, position: live.position, status, won: live.won };
       });
       storage.set(keys.golfers(tournamentId), merged);
       storage.set(keys.tournament(tournamentId), {
