@@ -72,18 +72,15 @@ export function scoreGolfer(golfer, opts = {}) {
   return { points, breakdown };
 }
 
-// Spec bands (cut line at +6 example): 7+over=0, 8-10=-1, 11-13=-2, 14-16=-3, 17-19=-4, 20+=-5
-// Generalized: overCut = strokesToPar - cutLine. So if cut is +6 and golfer is +14, overCut=+8.
-// Wait — re-reading: the bands are absolute strokes-over-par, not over-cut.
-// "7 over or better: 0 ... 20+ over: -5" — those numbers are strokes over par.
-// Cut-line value is auto-detected so we know where bands START. Treat as: overPar = strokesToPar.
-// Implementing per spec example: golfer at +14, cut at +6 → "14-16 over: -3" → tieredPenalty = -3. ✓
-export function tieredPenaltyBand(overPar) {
-  if (overPar <= 7) return 0;
-  if (overPar <= 10) return -1;
-  if (overPar <= 13) return -2;
-  if (overPar <= 16) return -3;
-  if (overPar <= 19) return -4;
+// Bands keyed off strokes-over-cut, 3 strokes wide, starting the moment a
+// golfer slips past the cut line. Applies in R3 + R4 to made-cut golfers only.
+// Example with cut at +4: a golfer at +5 → -1, +8 → -2, +11 → -3, +14 → -4, +17+ → -5.
+export function tieredPenaltyBand(overCut) {
+  if (overCut <= 0) return 0;
+  if (overCut <= 3) return -1;
+  if (overCut <= 6) return -2;
+  if (overCut <= 9) return -3;
+  if (overCut <= 12) return -4;
   return -5;
 }
 
