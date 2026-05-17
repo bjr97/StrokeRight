@@ -78,7 +78,10 @@ export default function App() {
         const live = byName.get(normalizeName(g.name));
         if (!live) return g;
         const status = TERMINAL.has(g.status) ? g.status : live.status;
-        return { ...g, strokesToPar: live.strokesToPar, todayToPar: live.todayToPar, thru: live.thru, position: live.position, status, won: live.won };
+        // `won` is sticky-true: ESPN often lags setting the winner flag, so once true,
+        // never let a subsequent sync revert it. To unset, use Admin → Live Controls.
+        const won = g.won || live.won;
+        return { ...g, strokesToPar: live.strokesToPar, todayToPar: live.todayToPar, thru: live.thru, position: live.position, status, won };
       });
       storage.set(keys.golfers(tournamentId), merged);
       storage.set(keys.tournament(tournamentId), {
