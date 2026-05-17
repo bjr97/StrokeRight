@@ -59,6 +59,11 @@ export default function App() {
   async function refreshLive() {
     if (!tournament) return;
     try {
+      // Re-hydrate cache from Supabase first so the merge sees authoritative current state
+      // (admin edits, prior syncs from other devices, manual data fixes) instead of a stale
+      // local cache. Otherwise sticky flags like `won` get silently clobbered.
+      await refresh();
+      const currentGolfers = storage.get(keys.golfers(tournamentId)) || [];
       const raw = await fetchEspnScoreboard();
       const { golfers: liveGolfers, currentRound, cutLine } = normalizeEspn(raw);
       // Normalize names: lowercase + strip diacritics so "Aberg" matches "Åberg",
@@ -74,7 +79,7 @@ export default function App() {
       const TERMINAL = new Set(['made_cut', 'missed_cut', 'withdrawn']);
       // Merge: keep tier assignments, overlay live score fields by golfer NAME
       const byName = new Map(liveGolfers.map((g) => [normalizeName(g.name), g]));
-      const merged = golfers.map((g) => {
+      const merged = currentGolfers.map((g) => {
         const live = byName.get(normalizeName(g.name));
         if (!live) return g;
         const status = TERMINAL.has(g.status) ? g.status : live.status;
