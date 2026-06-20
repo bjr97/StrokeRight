@@ -64,6 +64,10 @@ export default function App() {
       // local cache. Otherwise sticky flags like `won` get silently clobbered.
       await refresh();
       const currentGolfers = storage.get(keys.golfers(tournamentId)) || [];
+      // Re-read the tournament from the freshly-hydrated cache too. The `tournament`
+      // closure was captured at render and may predate an admin edit or a manual
+      // cut-line fix, which would defeat the `?? cutLine` guard below.
+      const currentTournament = storage.get(keys.tournament(tournamentId)) || tournament;
       const raw = await fetchEspnScoreboard();
       const { golfers: liveGolfers, currentRound, cutLine } = normalizeEspn(raw);
       // Normalize names: lowercase + strip diacritics so "Aberg" matches "Åberg",
@@ -90,9 +94,9 @@ export default function App() {
       });
       storage.set(keys.golfers(tournamentId), merged);
       storage.set(keys.tournament(tournamentId), {
-        ...tournament,
-        currentRound: tournament.currentRound || currentRound,
-        cutLine: tournament.cutLine ?? cutLine,
+        ...currentTournament,
+        currentRound: currentTournament.currentRound || currentRound,
+        cutLine: currentTournament.cutLine ?? cutLine,
       });
       refreshAll();
       alert('Live scores refreshed from ESPN.');
