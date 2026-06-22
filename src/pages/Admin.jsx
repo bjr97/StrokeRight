@@ -244,6 +244,26 @@ function LiveControls({ tournament, golfers, refreshAll }) {
         <Button onClick={save}>Save</Button>
       </Card>
 
+      <Card className="p-4 space-y-2">
+        <div className="text-sm font-medium">Tournament winner</div>
+        <div className="text-xs text-muted">Grants the winner the +3 bonus. Setting one winner clears any previous one.</div>
+        <select
+          value={golfers.find((g) => g.won)?.id ?? ''}
+          onChange={(e) => {
+            const winnerId = e.target.value;
+            const upd = golfers.map((x) => ({ ...x, won: x.id === winnerId }));
+            storage.set(keys.golfers(tournament.id), upd);
+            refreshAll();
+          }}
+          className="w-full bg-bg border border-border rounded px-2 py-2 text-sm"
+        >
+          <option value="">— No winner set —</option>
+          {golfers.map((g) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+        </select>
+      </Card>
+
       <Card className="p-4">
         <div className="text-sm font-medium mb-2">Manually adjust golfer status</div>
         <div className="text-xs text-muted mb-3">Use this when ESPN data is missing or wrong (e.g., late withdrawals).</div>
