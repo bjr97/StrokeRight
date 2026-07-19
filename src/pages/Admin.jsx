@@ -165,25 +165,8 @@ function TierManager({ tournament, golfers, refreshAll }) {
     alert('Saved.');
   }
 
-  function togglePenalty() {
-    storage.set(keys.tournament(tournament.id), { ...tournament, tieredPenaltyEnabled: !tournament.tieredPenaltyEnabled });
-    refreshAll();
-  }
-
   return (
     <div className="space-y-4">
-      <Card className="p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="font-medium">Tiered penalty scoring (Rule 8)</div>
-            <div className="text-xs text-muted mt-0.5">Optional. Applies penalty bands starting Round 3 based on strokes over par.</div>
-          </div>
-          <button onClick={togglePenalty} className={`px-3 py-1.5 rounded-lg text-sm ${tournament.tieredPenaltyEnabled ? 'bg-accent text-bg' : 'bg-border text-muted'}`}>
-            {tournament.tieredPenaltyEnabled ? 'On' : 'Off'}
-          </button>
-        </div>
-      </Card>
-
       {!draft.length && (
         <Card className="p-4 space-y-3">
           <div className="text-sm">Paste the field — one golfer per line, `Name, +odds`:</div>
@@ -236,8 +219,25 @@ function LiveControls({ tournament, golfers, refreshAll }) {
     refreshAll();
   }
 
+  function togglePenalty() {
+    storage.set(keys.tournament(tournament.id), { ...tournament, tieredPenaltyEnabled: !tournament.tieredPenaltyEnabled });
+    refreshAll();
+  }
+
   return (
     <div className="space-y-4">
+      <Card className="p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-medium">Tiered penalty scoring (Rule 8)</div>
+            <div className="text-xs text-muted mt-0.5">Optional. Applies penalty bands starting Round 3 based on strokes over the cut line, for golfers who made the cut.</div>
+          </div>
+          <button onClick={togglePenalty} className={`px-3 py-1.5 rounded-lg text-sm ${tournament.tieredPenaltyEnabled ? 'bg-accent text-bg' : 'bg-border text-muted'}`}>
+            {tournament.tieredPenaltyEnabled ? 'On' : 'Off'}
+          </button>
+        </div>
+      </Card>
+
       <Card className="p-4 space-y-3">
         <Field label="Current round (1–4)"><Input type="number" value={round} onChange={setRound} /></Field>
         <Field label="Cut line (over par). Leave blank to auto-detect."><Input type="number" value={cutLine} onChange={setCutLine} placeholder="6" /></Field>
