@@ -5,9 +5,69 @@ import { computeWinProbabilities } from '../lib/winProb.js';
 import { picksRevealed, deadlineLabel } from '../lib/gating.js';
 import { Card, Stat, Pill, StatusBadge, TierDot, fmtToPar, Input } from '../components/ui.jsx';
 
+// Human-readable labels for each breakdown line item.
+// Only non-zero entries are shown in the popup.
+const BREAKDOWN_LABELS = {
+  strokesUnderPar: 'Strokes under par',
+  cutBonus: 'Made cut bonus',
+  cutPenalty: 'Missed cut penalty',
+  wdPenalty: 'Withdrawal penalty',
+  winBonus: 'Winner bonus',
+  tieredPenalty: 'Cut-line tiered penalty',
+};
+
+function ScoreBreakdownModal({ scored, onClose }) {
+  if (!scored) return null;
+  const { golfer, points, breakdown } = scored;
+  const lines = Object.entries(breakdown || {}).filter(([, v]) => v !== 0);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card border border-border rounded-xl w-full max-w-sm p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <TierDot tier={golfer.tier} />
+            <span className="font-medium">{golfer.name}</span>
+            <span className="text-muted text-xs tabular-nums">{fmtToPar(golfer.strokesToPar)}</span>
+          </div>
+          <button onClick={onClose} className="text-muted hover:text-fg text-sm px-2">✕</button>
+        </div>
+
+        <div className="space-y-1 mb-3">
+          {lines.length === 0 && (
+            <div className="text-sm text-muted">No scoring events yet.</div>
+          )}
+          {lines.map(([key, value]) => (
+            <div key={key} className="flex items-center justify-between text-sm py-1">
+              <span className="text-muted">{BREAKDOWN_LABELS[key] || key}</span>
+              <span className={`tabular-nums ${value >= 0 ? 'text-accent' : 'text-danger'}`}>
+                {value >= 0 ? `+${value}` : value}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t border-border pt-2 flex items-center justify-between">
+          <span className="text-sm font-medium">Total</span>
+          <span className={`text-lg font-semibold tabular-nums ${points >= 0 ? 'text-accent' : 'text-danger'}`}>
+            {points >= 0 ? `+${points}` : points}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Leaderboard({ tournament, golfers, entries, snapshots, session }) {
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState(null);
+  const [breakdownFor, setBreakdownFor] = useState(null); // { golfer, points, breakdown }
 
   const revealed = picksRevealed(tournament, session);
 
@@ -120,9 +180,15 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
                         <span className="text-muted text-xs tabular-nums">{fmtToPar(s.golfer.strokesToPar)}</span>
                         <StatusBadge status={s.golfer.status} />
                       </span>
-                      <span className={`tabular-nums text-sm ${s.points >= 0 ? 'text-accent' : 'text-danger'}`}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setBreakdownFor(s);
+                        }}
+                        className={`tabular-nums text-sm underline decoration-dotted underline-offset-2 hover:opacity-80 ${s.points >= 0 ? 'text-accent' : 'text-danger'}`}
+                      >
                         {s.points >= 0 ? `+${s.points}` : s.points}
-                      </span>
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -131,6 +197,8 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
           );
         })}
       </div>
+
+      <ScoreBreakdownModal scored={breakdownFor} onClose={() => setBreakdownFor(null)} />
     </div>
   );
 }
