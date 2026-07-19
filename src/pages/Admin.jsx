@@ -224,6 +224,24 @@ function LiveControls({ tournament, golfers, refreshAll }) {
     refreshAll();
   }
 
+  function applyCutToAll() {
+    if (cutLine === '') return alert('Enter and save a cut line first.');
+    const line = Number(cutLine);
+    // Only touch golfers who aren't already withdrawn — never override a WD status.
+    const eligible = golfers.filter((g) => g.status !== 'withdrawn');
+    const madeCut = eligible.filter((g) => (g.strokesToPar ?? 0) <= line).length;
+    const missedCut = eligible.length - madeCut;
+
+    if (!confirm(`Apply cut line of ${line >= 0 ? '+' + line : line} to ${eligible.length} golfers?\n\n${madeCut} will be set to Made cut\n${missedCut} will be set to Missed cut\n\nGolfers already marked Withdrawn won't be touched.`)) return;
+
+    const upd = golfers.map((g) => {
+      if (g.status === 'withdrawn') return g;
+      return { ...g, status: (g.strokesToPar ?? 0) <= line ? 'made_cut' : 'missed_cut' };
+    });
+    storage.set(keys.golfers(tournament.id), upd);
+    refreshAll();
+  }
+
   return (
     <div className="space-y-4">
       <Card className="p-4">
@@ -242,6 +260,16 @@ function LiveControls({ tournament, golfers, refreshAll }) {
         <Field label="Current round (1–4)"><Input type="number" value={round} onChange={setRound} /></Field>
         <Field label="Cut line (over par). Leave blank to auto-detect."><Input type="number" value={cutLine} onChange={setCutLine} placeholder="6" /></Field>
         <Button onClick={save}>Save</Button>
+      </Card>
+
+      <Card className="p-4 space-y-2">
+        <div className="text-sm font-medium">Apply cut to all golfers</div>
+        <div className="text-xs text-muted">
+          After Round 2, once the cut line above is set and saved, click this to set every golfer's status
+          in one shot — anyone at or better than the cut line becomes Made cut, everyone else becomes Missed cut.
+          Golfers already marked Withdrawn are left alone.
+        </div>
+        <Button variant="secondary" onClick={applyCutToAll}>Apply cut line to all golfers</Button>
       </Card>
 
       <Card className="p-4 space-y-2">
