@@ -10,6 +10,7 @@ const OVERFLOW = [
   { id: 'trends',  label: 'Trends' },
   { id: 'compare', label: 'Compare' },
   { id: 'history', label: 'History' },
+  { id: 'rules',   label: 'Rules' },
 ];
 
 export default function Nav({ page, onChange, session, onLogout }) {
