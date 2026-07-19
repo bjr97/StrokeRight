@@ -86,7 +86,6 @@ export function tieredPenaltyBand(overCut) {
   if (overCut <= 13) return -4;
   return -5;
 }
-}
 
 /**
  * Score a whole entry (6 picks).
