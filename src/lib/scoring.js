@@ -75,13 +75,17 @@ export function scoreGolfer(golfer, opts = {}) {
 // Bands keyed off strokes-over-cut, 3 strokes wide, starting the moment a
 // golfer slips past the cut line. Applies in R3 + R4 to made-cut golfers only.
 // Example with cut at +4: a golfer at +5 → -1, +8 → -2, +11 → -3, +14 → -4, +17+ → -5.
+// Bands keyed off strokes-over-cut, 3 strokes wide, starting one stroke past
+// the cut line. Applies in R3 + R4 to made-cut golfers only.
+// Example with cut at +6: a golfer at +8 → -1, +11 → -2, +14 → -3, +17 → -4, +20+ → -5.
 export function tieredPenaltyBand(overCut) {
-  if (overCut <= 0) return 0;
-  if (overCut <= 3) return -1;
-  if (overCut <= 6) return -2;
-  if (overCut <= 9) return -3;
-  if (overCut <= 12) return -4;
+  if (overCut <= 1) return 0;
+  if (overCut <= 4) return -1;
+  if (overCut <= 7) return -2;
+  if (overCut <= 10) return -3;
+  if (overCut <= 13) return -4;
   return -5;
+}
 }
 
 /**
