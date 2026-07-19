@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { storage, keys, getActiveTournamentId, bootstrap, refresh } from './lib/storage.js';
 import { SUPABASE_READY } from './lib/supabase.js';
 import { fetchEspnScoreboard, normalizeEspn } from './lib/espnApi.js';
-
+import Rules from './pages/Rules.jsx';
 import AuthGate from './components/AuthGate.jsx';
 import Nav from './components/Nav.jsx';
 import Home from './pages/Home.jsx';
@@ -165,6 +165,7 @@ export default function App() {
         {page === 'trends' && tournament && <Trends tournament={tournament} golfers={golfers} entries={entries} snapshots={snapshots} session={session} />}
         {page === 'history' && <History session={session} refreshAll={refreshAll} />}
         {page === 'admin' && session.isAdmin && <Admin tournament={tournament} golfers={golfers} refreshAll={refreshAll} />}
+        {page === 'rules' && <Rules />}
       </main>
 
       {session.isAdmin && tournament && (
