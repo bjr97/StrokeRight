@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { storage, keys, listTournaments } from '../lib/storage.js';
-import { finalStandings } from '../lib/scoring.js';
+import { buildMajors } from '../lib/majors.js';
 import { fmtMoney as fm } from '../lib/payouts.js';
+import { fmtDate } from '../lib/format.js';
+import { oddsToNum } from '../lib/odds.js';
 import { Card, Button, Input, Pill, TierDot, confirmAsync } from '../components/ui.jsx';
 
 const TABS = [
@@ -21,54 +23,13 @@ export default function History({ session, refreshAll }) {
   const history = storage.get(keys.history) || [];
   const allTournaments = listTournaments();
 
-  // ─── Build the unified "majors" list ─────────────────────────────────────
   // "Full data" = a completed tournament that still has its entries/golfers
   // rows around, so standings can be recomputed live (always reflects the
   // latest scores, even if corrected after completion).
   // "Summary only" = a `history` row with no matching tournament left — the
   // legacy/manually-entered case where only the winner was ever recorded.
-  const majors = useMemo(() => {
-    const full = [];
-    const fullIds = new Set();
-
-    for (const t of allTournaments) {
-      if (t.status !== 'completed') continue;
-      const golfers = storage.get(keys.golfers(t.id)) || [];
-      const entries = storage.get(keys.entries(t.id)) || [];
-      const fs = finalStandings(t, golfers, entries);
-      if (!fs) continue;
-      fullIds.add(t.id);
-      full.push({
-        id: t.id,
-        name: t.name,
-        date: t.startDate || '',
-        fullData: true,
-        winner: fs.winnerNames,
-        team: fs.team,
-        points: fs.points,
-        entryCount: entries.length,
-        prize: fs.prize,
-        ranked: fs.ranked,
-        payouts: fs.payouts,
-      });
-    }
-
-    const summary = history
-      .filter((h) => !fullIds.has(h.id))
-      .map((h) => ({
-        id: h.id,
-        name: h.name,
-        date: h.date || '',
-        fullData: false,
-        winner: h.winner,
-        team: h.team || [],
-        points: h.points,
-        entryCount: h.entries,
-        prize: h.prize,
-      }));
-
-    return [...full, ...summary];
-  }, [allTournaments, history]);
+  // (Shared with the Home page's recent-majors section — see lib/majors.js.)
+  const majors = useMemo(() => buildMajors(), [allTournaments, history]);
 
   const sortedMajors = useMemo(() => {
     const list = [...majors];
@@ -618,19 +579,6 @@ function FunStats({ fun }) {
       ))}
     </div>
   );
-}
-
-function oddsToNum(odds) {
-  if (!odds) return -1;
-  const n = parseInt(String(odds).replace(/[+]/, ''), 10);
-  return Number.isFinite(n) ? n : -1;
-}
-
-function fmtDate(s) {
-  if (!s) return 'TBD';
-  const d = new Date(s.length <= 10 ? s + 'T00:00:00' : s);
-  if (isNaN(d)) return s;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function blankRecord() {

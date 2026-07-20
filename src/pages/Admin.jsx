@@ -104,6 +104,7 @@ function ManageTournaments({ active, refreshAll }) {
   if (!all.length) {
     return (
       <div className="space-y-3">
+        <NextMajorCard refreshAll={refreshAll} />
         <Card className="p-5 text-muted text-sm">
           No tournaments yet. Click <span className="text-text">New</span> to create one, or load demo data below to see the app populated.
         </Card>
@@ -114,6 +115,7 @@ function ManageTournaments({ active, refreshAll }) {
 
   return (
     <div className="space-y-2">
+      <NextMajorCard refreshAll={refreshAll} />
       {all.map((t) => (
         <Card key={t.id} className="p-4 flex items-center justify-between">
           <div>
@@ -146,6 +148,45 @@ function ManageTournaments({ active, refreshAll }) {
         </Card>
       ))}
     </div>
+  );
+}
+
+function NextMajorCard({ refreshAll }) {
+  const saved = storage.get(keys.nextMajor) || null;
+  const [name, setName] = useState(saved?.name || '');
+  const [deadline, setDeadline] = useState(saved?.deadline || '');
+
+  async function save() {
+    if (!name || !deadline) return alertAsync('Enter both a name and a picks-due date & time.');
+    storage.set(keys.nextMajor, { name, deadline });
+    refreshAll();
+  }
+
+  async function clear() {
+    const ok = await confirmAsync('Clear the next-major countdown override?', { confirmLabel: 'Clear' });
+    if (!ok) return;
+    storage.delete(keys.nextMajor);
+    setName('');
+    setDeadline('');
+    refreshAll();
+  }
+
+  return (
+    <Card className="p-4 space-y-2">
+      <div className="text-sm font-medium">Next major countdown (homepage)</div>
+      <div className="text-xs text-muted">
+        Shows a countdown on everyone's homepage until this deadline. Meant for bridging the gap before
+        you've created the actual tournament — once a tournament exists with its own deadline, that takes
+        over automatically, but this stays saved until you clear it, so remember to clear it once it's no
+        longer needed.
+      </div>
+      <Input value={name} onChange={setName} placeholder="Major name (e.g. 2026 PGA Championship)" />
+      <Input type="datetime-local" value={deadline} onChange={setDeadline} placeholder="Picks-due date & time" />
+      <div className="flex gap-2">
+        <Button onClick={save}>Save</Button>
+        {saved && <Button variant="ghost" onClick={clear}>Clear</Button>}
+      </div>
+    </Card>
   );
 }
 

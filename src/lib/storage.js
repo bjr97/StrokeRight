@@ -13,6 +13,7 @@
 //   - `history`                    → history table     (one row per record, full replace on write)
 //   - `admin-code`                 → app_config table  (key='admin-code')
 //   - `active-tournament-id`       → app_config table  (key='active-tournament-id')
+//   - `next-major`                 → app_config table  (key='next-major', {name, deadline})
 
 import { supabase, SUPABASE_READY } from './supabase.js';
 
@@ -74,6 +75,7 @@ export const keys = {
   history:       'history',
   adminCode:     'admin-code',
   activeTournId: 'active-tournament-id',
+  nextMajor:     'next-major',
   session:       'session',
 };
 
