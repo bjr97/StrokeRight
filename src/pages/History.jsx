@@ -306,23 +306,6 @@ export default function History({ session, refreshAll }) {
         </p>
       </div>
 
-      <Card className="p-3 text-xs text-muted space-y-1.5">
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-accent inline-block" />
-            <b className="text-text">Full data</b> — every entry &amp; pick preserved
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-border inline-block" />
-            <b className="text-text">Summary only</b> — winner recorded, entry list not available
-          </span>
-        </div>
-        <div>
-          Stroker and golfer stats below only draw from majors with full data. Older majors still count
-          toward win totals and lifetime $ won.
-        </div>
-      </Card>
-
       <div
         className="sticky top-14 z-20 bg-bg/95 backdrop-blur flex gap-2 border-b border-border overflow-x-auto"
         style={{ overflowAnchor: 'none' }}
