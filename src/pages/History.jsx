@@ -471,15 +471,15 @@ function StrokerTable({ rows, sort, onSort }) {
     { key: 'roi', label: 'ROI' },
   ];
   return (
-    <Card className="p-3 overflow-x-auto">
-      <table className="w-full text-sm">
+    <Card className="p-2 sm:p-3 overflow-x-auto">
+      <table className="w-full text-xs sm:text-sm">
         <thead>
           <tr>
             {cols.map((c) => (
               <th
                 key={c.key}
                 onClick={() => onSort(c.key)}
-                className={`text-[11px] uppercase tracking-wide text-muted pb-2 cursor-pointer select-none whitespace-nowrap ${c.left ? 'text-left' : 'text-right'} ${sort.key === c.key ? 'text-accent' : ''}`}
+                className={`text-[9px] sm:text-[11px] uppercase tracking-wide text-muted leading-tight align-bottom pb-1.5 px-0.5 sm:px-1.5 cursor-pointer select-none ${c.left ? 'text-left' : 'text-right'} ${sort.key === c.key ? 'text-accent' : ''}`}
               >
                 {c.label}
               </th>
@@ -489,13 +489,13 @@ function StrokerTable({ rows, sort, onSort }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.name} className="border-t border-border">
-              <td className="py-2 pr-2">{r.name}</td>
-              <td className="py-2 text-right tabular-nums">{r.wins}</td>
-              <td className="py-2 text-right tabular-nums text-warn">{r.podiumOnly ?? '—'}</td>
-              <td className="py-2 text-right tabular-nums text-accent">{fm(r.moneyWon)}</td>
-              <td className="py-2 text-right tabular-nums text-muted">{r.entries ?? '—'}</td>
-              <td className="py-2 text-right tabular-nums text-muted">{r.feesPaid != null ? fm(r.feesPaid) : '—'}</td>
-              <td className="py-2 text-right tabular-nums">{r.roi != null ? `${(r.roi * 100).toFixed(0)}%` : '—'}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 whitespace-nowrap">{r.name}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums">{r.wins}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-warn">{r.podiumOnly ?? '—'}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-accent whitespace-nowrap">{fm(r.moneyWon)}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.entries ?? '—'}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted whitespace-nowrap">{r.feesPaid != null ? fm(r.feesPaid) : '—'}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums whitespace-nowrap">{r.roi != null ? `${(r.roi * 100).toFixed(0)}%` : '—'}</td>
             </tr>
           ))}
           {!rows.length && (
