@@ -6,7 +6,7 @@ import { Card, Button, Input, Pill, TierDot, confirmAsync } from '../components/
 
 const TABS = [
   { key: 'majors', label: 'Past majors' },
-  { key: 'gamblers', label: 'Gambler leaderboard' },
+  { key: 'strokers', label: 'Stroker leaderboard' },
   { key: 'golfers', label: 'Golfer trends' },
   { key: 'fun', label: 'Fun stats' },
 ];
@@ -77,11 +77,11 @@ export default function History({ session, refreshAll }) {
     return list;
   }, [majors, majorSort]);
 
-  // ─── Gambler + golfer aggregation ────────────────────────────────────────
+  // ─── Stroker + golfer aggregation ────────────────────────────────────────
   // Wins & $ won: across every major (full data or summary).
   // Entries / $ spent / ROI / golfer picks: only from full-data majors —
-  // that's the only place we know every gambler's entry, not just the winner's.
-  const { gamblerRows, golferRows } = useMemo(() => {
+  // that's the only place we know every stroker's entry, not just the winner's.
+  const { strokerRows, golferRows } = useMemo(() => {
     const wins = new Map();
     const full = new Map();
     const golferCounts = new Map();
@@ -131,7 +131,7 @@ export default function History({ session, refreshAll }) {
     }
 
     const names = new Set([...wins.keys(), ...full.keys()]);
-    const gamblerRows = [...names].map((name) => {
+    const strokerRows = [...names].map((name) => {
       const w = wins.get(name) || { wins: 0, moneyWon: 0 };
       const f = full.get(name);
       const roi = f && f.feesPaid > 0 ? f.moneyWonFull / f.feesPaid : null;
@@ -150,11 +150,11 @@ export default function History({ session, refreshAll }) {
       .sort((a, b) => b.count - a.count)
       .slice(0, 15);
 
-    return { gamblerRows, golferRows };
+    return { strokerRows, golferRows };
   }, [majors, allTournaments]);
 
-  const sortedGamblers = useMemo(() => {
-    const list = [...gamblerRows];
+  const sortedStrokers = useMemo(() => {
+    const list = [...strokerRows];
     list.sort((a, b) => {
       const av = a[gSort.key], bv = b[gSort.key];
       if (av == null && bv == null) return 0;
@@ -164,7 +164,7 @@ export default function History({ session, refreshAll }) {
       return (av - bv) * gSort.dir;
     });
     return list;
-  }, [gamblerRows, gSort]);
+  }, [strokerRows, gSort]);
 
   function toggleGSort(key) {
     setGSort((s) => (s.key === key ? { key, dir: s.dir * -1 } : { key, dir: -1 }));
@@ -172,8 +172,8 @@ export default function History({ session, refreshAll }) {
 
   const fun = useMemo(() => {
     if (!majors.length) return null;
-    const topWins = Math.max(0, ...gamblerRows.map((r) => r.wins));
-    const mostWins = gamblerRows.filter((r) => r.wins === topWins && topWins > 0);
+    const topWins = Math.max(0, ...strokerRows.map((r) => r.wins));
+    const mostWins = strokerRows.filter((r) => r.wins === topWins && topWins > 0);
 
     let biggestPrize = null, highestScore = null, biggestField = null;
     for (const m of majors) {
@@ -188,15 +188,15 @@ export default function History({ session, refreshAll }) {
       }
     }
 
-    const withRoi = gamblerRows.filter((r) => r.roi != null && r.entries > 0);
+    const withRoi = strokerRows.filter((r) => r.roi != null && r.entries > 0);
     const bestRoi = withRoi.length ? withRoi.reduce((a, b) => (b.roi > a.roi ? b : a)) : null;
-    const ironMan = gamblerRows
+    const ironMan = strokerRows
       .filter((r) => r.entries != null)
       .reduce((a, b) => ((b.entries || 0) > (a?.entries || 0) ? b : a), null);
     const topGolfer = golferRows[0] || null;
 
     return { mostWins, topWins, biggestPrize, highestScore, biggestField, bestRoi, ironMan, topGolfer };
-  }, [majors, gamblerRows, golferRows]);
+  }, [majors, strokerRows, golferRows]);
 
   function save(idx, draft) {
     const next = [...history];
@@ -221,7 +221,7 @@ export default function History({ session, refreshAll }) {
       <div>
         <h1 className="text-lg font-semibold">Pool history</h1>
         <p className="text-xs text-muted mt-0.5">
-          Every major your pool has run — standings, gambler records, and pick trends.
+          Every major your pool has run — standings, stroker records, and pick trends.
         </p>
       </div>
 
@@ -237,7 +237,7 @@ export default function History({ session, refreshAll }) {
           </span>
         </div>
         <div>
-          Gambler and golfer stats below only draw from majors with full data. Older majors still count
+          Stroker and golfer stats below only draw from majors with full data. Older majors still count
           toward win totals and lifetime $ won.
         </div>
       </Card>
@@ -296,9 +296,9 @@ export default function History({ session, refreshAll }) {
         </div>
       )}
 
-      {tab === 'gamblers' && (
+      {tab === 'strokers' && (
         <div className="space-y-2">
-          <GamblerTable rows={sortedGamblers} sort={gSort} onSort={toggleGSort} />
+          <StrokerTable rows={sortedStrokers} sort={gSort} onSort={toggleGSort} />
           <p className="text-xs text-muted">
             Entries / $ Spent / ROI only reflect majors with full data. ROI compares $ won to $ spent within
             that same set — it won't count a legacy win with no known entry cost. "—" means we don't have
@@ -375,9 +375,9 @@ function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
   );
 }
 
-function GamblerTable({ rows, sort, onSort }) {
+function StrokerTable({ rows, sort, onSort }) {
   const cols = [
-    { key: 'name', label: 'Gambler', left: true },
+    { key: 'name', label: 'Stroker', left: true },
     { key: 'wins', label: 'Wins' },
     { key: 'moneyWon', label: '$ Won' },
     { key: 'entries', label: 'Entries' },
