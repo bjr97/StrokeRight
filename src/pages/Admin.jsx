@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { storage, keys, listTournaments, setActiveTournamentId, getActiveTournamentId } from '../lib/storage.js';
 import { seedDemoMasters } from '../lib/seedData.js';
+import { rankEntries } from '../lib/scoring.js';
+import { computePayouts, fmtMoney } from '../lib/payouts.js';
 import { Card, Button, Input, Pill, TierDot, TIER_COLORS, fmtToPar } from '../components/ui.jsx';
 
 export default function Admin({ tournament, golfers, refreshAll }) {
@@ -105,7 +107,7 @@ function ManageTournaments({ active, refreshAll }) {
             <div className="flex items-center gap-2">
               <span className="font-medium">{t.name}</span>
               {t.id === activeId && <Pill color="green">Active</Pill>}
-              <Pill color={t.status === 'live' ? 'amber' : 'gray'}>{t.status}</Pill>
+              <Pill color={t.status === 'live' ? 'amber' : t.status === 'completed' ? 'green' : 'gray'}>{t.status}</Pill>
             </div>
             <div className="text-xs text-muted mt-1">Code: <code className="text-text">{t.poolCode}</code> · Deadline {t.deadline || 'TBD'}</div>
           </div>
@@ -213,6 +215,65 @@ function TierManager({ tournament, golfers, refreshAll }) {
 function LiveControls({ tournament, golfers, refreshAll }) {
   const [round, setRound] = useState(tournament.currentRound);
   const [cutLine, setCutLine] = useState(tournament.cutLine ?? '');
+  const entries = storage.get(keys.entries(tournament.id)) || [];
+
+  function completeTournament() {
+    if (!entries.length) return alert('No entries yet — nothing to finalize.');
+
+    const ranked = rankEntries(entries, golfers, {
+      tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
+      cutLine: tournament.cutLine,
+      currentRound: tournament.currentRound,
+    });
+    const { payouts } = computePayouts(ranked, entries.length, tournament.entryFee);
+
+    const topRank = ranked[0].rank;
+    const winners = ranked.filter((r) => r.rank === topRank);
+    const winnerNames = winners.map((w) => w.entry.name).join(' & ');
+    const team = [...new Set(winners.flatMap((w) => w.scored.map((s) => s.golfer.name)))];
+    const points = winners[0].total;
+    const prize = winners.reduce((sum, w) => sum + (payouts.get(w.entry.id) || 0), 0);
+
+    const stillPlaying = golfers.some((g) => g.status === 'playing');
+    const warning = stillPlaying
+      ? '\n\n⚠️ Some golfers are still marked "Playing" — scores may not be final.'
+      : '';
+
+    const ok = confirm(
+      `Mark "${tournament.name}" complete and file it under History?\n\n` +
+      `Winner: ${winnerNames}\nScore: ${points >= 0 ? '+' + points : points}\n` +
+      `Prize: ${fmtMoney(prize)}\nEntries: ${entries.length}${warning}\n\n` +
+      `This clears it as the active tournament. You can still edit or delete the ` +
+      `History entry afterward.`
+    );
+    if (!ok) return;
+
+    const record = {
+      id: tournament.id,
+      name: tournament.name,
+      date: tournament.startDate || new Date().toISOString().slice(0, 10),
+      winner: winnerNames,
+      team,
+      points,
+      entries: entries.length,
+      prize,
+    };
+    const history = storage.get(keys.history) || [];
+    storage.set(keys.history, [record, ...history.filter((h) => h.id !== record.id)]);
+
+    storage.set(keys.tournament(tournament.id), { ...tournament, status: 'completed' });
+    if (getActiveTournamentId() === tournament.id) storage.delete(keys.activeTournId);
+
+    refreshAll();
+    alert('Tournament marked complete and added to History.');
+  }
+
+  function reactivate() {
+    if (!confirm(`Reactivate "${tournament.name}"? This sets its status back to live. It won't remove the History record — delete that separately on the History tab if you want.`)) return;
+    storage.set(keys.tournament(tournament.id), { ...tournament, status: 'live' });
+    setActiveTournamentId(tournament.id);
+    refreshAll();
+  }
 
   function save() {
     storage.set(keys.tournament(tournament.id), { ...tournament, currentRound: Number(round), cutLine: cutLine === '' ? null : Number(cutLine) });
@@ -316,6 +377,30 @@ function LiveControls({ tournament, golfers, refreshAll }) {
             </div>
           ))}
         </div>
+      </Card>
+
+      <Card className="p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="text-sm font-medium">Finish tournament</div>
+          {tournament.status === 'completed' && <Pill color="green">completed</Pill>}
+        </div>
+        {tournament.status === 'completed' ? (
+          <>
+            <div className="text-xs text-muted">
+              This tournament is filed under History and is no longer active.
+            </div>
+            <Button variant="secondary" onClick={reactivate}>Reactivate</Button>
+          </>
+        ) : (
+          <>
+            <div className="text-xs text-muted">
+              Once the final round is in and the winner is set above, click this to compute
+              final standings and payouts, file a summary under History, and clear this as
+              the active tournament.
+            </div>
+            <Button variant="danger" onClick={completeTournament}>Mark tournament complete</Button>
+          </>
+        )}
       </Card>
     </div>
   );
