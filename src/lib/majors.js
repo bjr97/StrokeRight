@@ -253,7 +253,7 @@ export function getStrokerWins() {
 
 // Fixed display order so the emoji string reads the same for everyone
 // regardless of the order they actually won things in.
-const TROPHY_ORDER = ['masters', 'pga', 'us_open', 'open', 'wm_open'];
+const TROPHY_ORDER = ['players', 'masters', 'pga', 'us_open', 'open', 'wm_open'];
 
 /** Builds the repeated-emoji trophy-case string from a stroker's win list. */
 export function trophyCaseEmojis(winList) {

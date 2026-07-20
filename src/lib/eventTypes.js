@@ -1,5 +1,6 @@
 export const EVENT_TYPES = [
   { value: 'wm_open', label: 'WM Open' },
+  { value: 'players', label: 'The Players' },
   { value: 'masters', label: 'The Masters' },
   { value: 'us_open', label: 'US Open' },
   { value: 'pga',     label: 'PGA Championship' },
@@ -16,12 +17,15 @@ export function eventTypeLabel(value) {
 // No true "green jacket" emoji exists in Unicode — 🧥 (coat) is the closest
 // real stand-in and is what people commonly use for it. WM Open uses 🗑️,
 // leaning into the event's own "trash can" reputation, not a real trophy.
+// The Players uses 🏝️ for the famous island-green 17th at TPC Sawgrass —
+// wasn't in the original spec, so flag if you'd rather use something else.
 export const EVENT_TYPE_EMOJI = {
   masters: '🧥',
   us_open: '🇺🇸',
   pga: '🏌️',
   open: '🏆',
   wm_open: '🗑️',
+  players: '🏝️',
 };
 
 export function eventTypeEmoji(value) {
@@ -34,6 +38,7 @@ export function eventTypeEmoji(value) {
 // Masters", "2026 Open Championship", etc).
 const NAME_TEMPLATE = {
   wm_open: 'WM Open',
+  players: 'The Players',
   masters: 'Masters',
   us_open: 'US Open',
   pga: 'PGA Championship',
