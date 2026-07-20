@@ -70,22 +70,24 @@ export function buildMajors() {
 // a tie for the win, then a notable longshot pick on the winning team, then
 // how close/lopsided the margin was. Returns null if nothing stands out (or
 // there isn't enough data to tell, e.g. a summary-only legacy major).
-// Names of the stroker(s) who won the most recent PAST major of the same
-// event type as `tournament` (a true "defending champion" lookup — same
-// event only, exactly one edition back, not just whoever won most recently
-// overall). Returns [] if the event type is 'other' (no meaningful
-// defending-champion concept for a catch-all category), if there's no prior
-// edition on record, or if `tournament` has no usable start date to anchor
-// "previous" against.
-export function getDefendingChampions(tournament) {
-  if (!tournament?.eventType || tournament.eventType === 'other') return [];
-  if (!tournament.startDate) return [];
-  const currentDate = new Date(tournament.startDate);
-  if (isNaN(currentDate)) return [];
+// Names of the stroker(s) who won the most recent PAST major of the given
+// event type, anchored strictly before `anchorDate` (a true "defending
+// champion" lookup — same event only, exactly one edition back, not just
+// whoever won most recently overall). Takes a plain {eventType, anchorDate}
+// pair rather than a tournament object so it works equally for the active
+// tournament (anchorDate = its startDate) and the admin's manual "next
+// major" override (anchorDate = its deadline, since there's no startDate
+// yet). Returns [] for event type 'other'/unset, missing/invalid
+// anchorDate, or no prior edition on record.
+export function getDefendingChampions({ eventType, anchorDate } = {}) {
+  if (!eventType || eventType === 'other') return [];
+  if (!anchorDate) return [];
+  const anchor = new Date(anchorDate);
+  if (isNaN(anchor)) return [];
 
   const priorEditions = buildMajors()
-    .filter((m) => m.eventType === tournament.eventType && m.date)
-    .filter((m) => new Date(m.date) < currentDate)
+    .filter((m) => m.eventType === eventType && m.date)
+    .filter((m) => new Date(m.date) < anchor)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const mostRecent = priorEditions[0];

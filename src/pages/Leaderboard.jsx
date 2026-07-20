@@ -84,7 +84,10 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
     cutLine: tournament.cutLine,
   }), [ranked, golfers, tournament]);
 
-  const defendingChampions = useMemo(() => getDefendingChampions(tournament), [tournament]);
+  const defendingChampions = useMemo(
+    () => getDefendingChampions({ eventType: tournament.eventType, anchorDate: tournament.startDate }),
+    [tournament]
+  );
 
   const { payouts, structure } = computePayouts(ranked, entries.length, tournament.entryFee);
 

@@ -179,12 +179,20 @@ function ManageTournaments({ active, refreshAll }) {
 
 function NextMajorCard({ refreshAll }) {
   const saved = storage.get(keys.nextMajor) || null;
+  const [eventType, setEventType] = useState(saved?.eventType || 'other');
   const [name, setName] = useState(saved?.name || '');
   const [deadline, setDeadline] = useState(saved?.deadline || '');
 
+  const nameLocked = eventType !== 'other';
+  const computedName = autoTournamentName(eventType, deadline);
+
   async function save() {
-    if (!name || !deadline) return alertAsync('Enter both a name and a picks-due date & time.');
-    storage.set(keys.nextMajor, { name, deadline });
+    if (nameLocked && !computedName) {
+      return alertAsync('Set a picks-due date first so the name can be generated — or choose "Other" to type a name manually.');
+    }
+    const finalName = nameLocked ? computedName : name;
+    if (!finalName || !deadline) return alertAsync('Enter both a name and a picks-due date & time.');
+    storage.set(keys.nextMajor, { name: finalName, deadline, eventType });
     refreshAll();
   }
 
@@ -192,6 +200,7 @@ function NextMajorCard({ refreshAll }) {
     const ok = await confirmAsync('Clear the next-major countdown override?', { confirmLabel: 'Clear' });
     if (!ok) return;
     storage.delete(keys.nextMajor);
+    setEventType('other');
     setName('');
     setDeadline('');
     refreshAll();
@@ -204,10 +213,18 @@ function NextMajorCard({ refreshAll }) {
         Shows a countdown on everyone's homepage until this deadline. Meant for bridging the gap before
         you've created the actual tournament — once a tournament exists with its own deadline, that takes
         over automatically, but this stays saved until you clear it, so remember to clear it once it's no
-        longer needed.
+        longer needed. Event type also drives the "defending champ" line under the countdown, so set it
+        if you can.
       </div>
-      <Input value={name} onChange={setName} placeholder="Major name (e.g. 2026 PGA Championship)" />
+      <Select value={eventType} onChange={setEventType} options={EVENT_TYPES} className="w-full" />
       <Input type="datetime-local" value={deadline} onChange={setDeadline} placeholder="Picks-due date & time" />
+      {nameLocked ? (
+        <div className="px-3 py-2 bg-bg border border-border rounded-lg text-sm">
+          {computedName || <span className="text-muted">Set a picks-due date above to generate the name</span>}
+        </div>
+      ) : (
+        <Input value={name} onChange={setName} placeholder="Major name (e.g. 2026 Member-Guest Classic)" />
+      )}
       <div className="flex gap-2">
         <Button onClick={save}>Save</Button>
         {saved && <Button variant="ghost" onClick={clear}>Clear</Button>}

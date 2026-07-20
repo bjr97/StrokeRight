@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { storage, keys } from '../lib/storage.js';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
-import { buildMajors } from '../lib/majors.js';
+import { buildMajors, getDefendingChampions } from '../lib/majors.js';
 import { fmtDate } from '../lib/format.js';
 import { Card, Stat, Button } from '../components/ui.jsx';
 
@@ -13,11 +13,21 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   // fall back to the active tournament's own submission deadline.
   const countdownName = nextMajor?.name || tournament?.name;
   const countdownDeadline = nextMajor?.deadline || tournament?.deadline;
+  const countdownEventType = nextMajor?.eventType || tournament?.eventType;
+  // No startDate exists yet for a pure override, so anchor on the deadline
+  // instead — it's always at or before the real event, which is all that
+  // matters for "did this prior edition happen before the upcoming one".
+  const countdownAnchorDate = nextMajor?.deadline || tournament?.startDate || tournament?.deadline;
 
   const majors = useMemo(() => buildMajors(), [tournament, entries]);
   const recentMajors = useMemo(
     () => [...majors].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4),
     [majors]
+  );
+  const lastMajorOverall = recentMajors[0] || null;
+  const defendingChampions = useMemo(
+    () => getDefendingChampions({ eventType: countdownEventType, anchorDate: countdownAnchorDate }),
+    [countdownEventType, countdownAnchorDate, majors]
   );
 
   let ranked = [], structure = null, leader = null, myEntries = [];
@@ -34,7 +44,14 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-32 md:pb-6 space-y-6">
-      {countdownDeadline && <Countdown name={countdownName} deadline={countdownDeadline} />}
+      {countdownDeadline && (
+        <Countdown
+          name={countdownName}
+          deadline={countdownDeadline}
+          defendingChampions={defendingChampions}
+          lastMajorOverall={lastMajorOverall}
+        />
+      )}
 
       {!tournament ? (
         <Card className="p-6 text-center">
@@ -124,7 +141,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   );
 }
 
-function Countdown({ name, deadline }) {
+function Countdown({ name, deadline, defendingChampions = [], lastMajorOverall = null }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -155,6 +172,21 @@ function Countdown({ name, deadline }) {
               <div className="text-[10px] text-muted uppercase tracking-wide mt-0.5">{label}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {(defendingChampions.length > 0 || lastMajorOverall) && (
+        <div className="mt-4 pt-3 border-t border-border space-y-0.5">
+          {defendingChampions.length > 0 && (
+            <div className="text-xs text-muted">
+              Defending champ: <span className="text-text">{defendingChampions.join(' & ')}</span>
+            </div>
+          )}
+          {lastMajorOverall && (
+            <div className="text-xs text-muted">
+              Last winner: <span className="text-text">{lastMajorOverall.winner}</span> — {lastMajorOverall.name}
+            </div>
+          )}
         </div>
       )}
     </Card>
