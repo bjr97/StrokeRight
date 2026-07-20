@@ -323,7 +323,10 @@ export default function History({ session, refreshAll }) {
         </div>
       </Card>
 
-      <div className="flex gap-2 border-b border-border overflow-x-auto">
+      <div
+        className="sticky top-14 z-20 bg-bg/95 backdrop-blur flex gap-2 border-b border-border overflow-x-auto"
+        style={{ overflowAnchor: 'none' }}
+      >
         {TABS.map((t) => (
           <button
             key={t.key}
