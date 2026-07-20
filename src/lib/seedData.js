@@ -2,6 +2,7 @@
 // even without a live event. Idempotent — only seeds if no tournaments exist yet.
 
 import { storage, keys, setActiveTournamentId } from './storage.js';
+import { confirmAsync } from '../components/ui.jsx';
 
 const TOURNAMENT_ID = '2026-masters';
 
@@ -77,9 +78,10 @@ const PAST_HISTORY = [
   { id: '2025-players',  name: '2025 The Players',      date: '2025-03-16', winner: 'Bryce W.',   team: ['Aberg', 'Koepka', 'Thomas', 'Finau', 'Lowry', 'Straka'],                points: 41, entries: 35, prize: 227.50 },
 ];
 
-export function seedDemoMasters() {
+export async function seedDemoMasters() {
   if (storage.get(keys.tournament(TOURNAMENT_ID))) {
-    if (!confirm('Demo tournament already exists. Overwrite?')) return false;
+    const ok = await confirmAsync('Demo tournament already exists. Overwrite?', { confirmLabel: 'Overwrite' });
+    if (!ok) return false;
   }
   if (!storage.get(keys.adminCode)) storage.set(keys.adminCode, 'admin');
 

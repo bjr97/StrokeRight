@@ -3,7 +3,7 @@ import { storage, keys, listTournaments, setActiveTournamentId, getActiveTournam
 import { seedDemoMasters } from '../lib/seedData.js';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
-import { Card, Button, Input, Pill, TierDot, TIER_COLORS, fmtToPar } from '../components/ui.jsx';
+import { Card, Button, Input, Pill, TierDot, TIER_COLORS, fmtToPar, confirmAsync, alertAsync } from '../components/ui.jsx';
 
 export default function Admin({ tournament, golfers, refreshAll }) {
   const [tab, setTab] = useState(tournament ? 'manage' : 'create');
@@ -40,8 +40,8 @@ function CreateTournament({ refreshAll }) {
     name: '', startDate: '', deadline: '', poolCode: '', course: '',
   });
 
-  function save() {
-    if (!form.name || !form.poolCode) return alert('Name and pool code are required');
+  async function save() {
+    if (!form.name || !form.poolCode) return alertAsync('Name and pool code are required');
     const id = form.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) + '-' + Date.now().toString(36);
     const t = {
       id,
@@ -82,9 +82,13 @@ function ManageTournaments({ active, refreshAll }) {
   const all = listTournaments();
   const activeId = getActiveTournamentId();
 
-  function loadDemo() {
-    if (!confirm('Load the demo 2026 Masters tournament into Supabase? This will be visible to everyone in your pool. You can delete it later.')) return;
-    seedDemoMasters();
+  async function loadDemo() {
+    const ok = await confirmAsync(
+      'Load the demo 2026 Masters tournament into Supabase? This will be visible to everyone in your pool. You can delete it later.',
+      { confirmLabel: 'Load demo' }
+    );
+    if (!ok) return;
+    await seedDemoMasters();
     setTimeout(refreshAll, 300);
   }
 
@@ -117,8 +121,9 @@ function ManageTournaments({ active, refreshAll }) {
             )}
             <Button
               variant="danger"
-              onClick={() => {
-                if (!confirm(`Delete ${t.name}? This wipes entries and scores.`)) return;
+              onClick={async () => {
+                const ok = await confirmAsync(`Delete ${t.name}? This wipes entries and scores.`, { danger: true, confirmLabel: 'Delete' });
+                if (!ok) return;
                 storage.delete(keys.tournament(t.id));
                 storage.delete(keys.golfers(t.id));
                 storage.delete(keys.entries(t.id));
@@ -161,10 +166,10 @@ function TierManager({ tournament, golfers, refreshAll }) {
     }));
   }
 
-  function save() {
+  async function save() {
     storage.set(keys.golfers(tournament.id), draft);
     refreshAll();
-    alert('Saved.');
+    await alertAsync('Saved.');
   }
 
   return (
@@ -217,8 +222,8 @@ function LiveControls({ tournament, golfers, refreshAll }) {
   const [cutLine, setCutLine] = useState(tournament.cutLine ?? '');
   const entries = storage.get(keys.entries(tournament.id)) || [];
 
-  function completeTournament() {
-    if (!entries.length) return alert('No entries yet — nothing to finalize.');
+  async function completeTournament() {
+    if (!entries.length) return alertAsync('No entries yet — nothing to finalize.');
 
     const ranked = rankEntries(entries, golfers, {
       tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
@@ -239,12 +244,13 @@ function LiveControls({ tournament, golfers, refreshAll }) {
       ? '\n\n⚠️ Some golfers are still marked "Playing" — scores may not be final.'
       : '';
 
-    const ok = confirm(
+    const ok = await confirmAsync(
       `Mark "${tournament.name}" complete and file it under History?\n\n` +
       `Winner: ${winnerNames}\nScore: ${points >= 0 ? '+' + points : points}\n` +
       `Prize: ${fmtMoney(prize)}\nEntries: ${entries.length}${warning}\n\n` +
       `This clears it as the active tournament. You can still edit or delete the ` +
-      `History entry afterward.`
+      `History entry afterward.`,
+      { danger: true, confirmLabel: 'Mark complete' }
     );
     if (!ok) return;
 
@@ -265,11 +271,15 @@ function LiveControls({ tournament, golfers, refreshAll }) {
     if (getActiveTournamentId() === tournament.id) storage.delete(keys.activeTournId);
 
     refreshAll();
-    alert('Tournament marked complete and added to History.');
+    await alertAsync('Tournament marked complete and added to History.');
   }
 
-  function reactivate() {
-    if (!confirm(`Reactivate "${tournament.name}"? This sets its status back to live. It won't remove the History record — delete that separately on the History tab if you want.`)) return;
+  async function reactivate() {
+    const ok = await confirmAsync(
+      `Reactivate "${tournament.name}"? This sets its status back to live. It won't remove the History record — delete that separately on the History tab if you want.`,
+      { confirmLabel: 'Reactivate' }
+    );
+    if (!ok) return;
     storage.set(keys.tournament(tournament.id), { ...tournament, status: 'live' });
     setActiveTournamentId(tournament.id);
     refreshAll();
@@ -285,15 +295,19 @@ function LiveControls({ tournament, golfers, refreshAll }) {
     refreshAll();
   }
 
-  function applyCutToAll() {
-    if (cutLine === '') return alert('Enter and save a cut line first.');
+  async function applyCutToAll() {
+    if (cutLine === '') return alertAsync('Enter and save a cut line first.');
     const line = Number(cutLine);
     // Only touch golfers who aren't already withdrawn — never override a WD status.
     const eligible = golfers.filter((g) => g.status !== 'withdrawn');
     const madeCut = eligible.filter((g) => (g.strokesToPar ?? 0) <= line).length;
     const missedCut = eligible.length - madeCut;
 
-    if (!confirm(`Apply cut line of ${line >= 0 ? '+' + line : line} to ${eligible.length} golfers?\n\n${madeCut} will be set to Made cut\n${missedCut} will be set to Missed cut\n\nGolfers already marked Withdrawn won't be touched.`)) return;
+    const ok = await confirmAsync(
+      `Apply cut line of ${line >= 0 ? '+' + line : line} to ${eligible.length} golfers?\n\n${madeCut} will be set to Made cut\n${missedCut} will be set to Missed cut\n\nGolfers already marked Withdrawn won't be touched.`,
+      { confirmLabel: 'Apply' }
+    );
+    if (!ok) return;
 
     const upd = golfers.map((g) => {
       if (g.status === 'withdrawn') return g;

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { storage, keys } from '../lib/storage.js';
-import { Card, Button, Input } from '../components/ui.jsx';
+import { Card, Button, Input, confirmAsync } from '../components/ui.jsx';
 import { fmtMoney as fm } from '../lib/payouts.js';
 
 export default function History({ session, refreshAll }) {
@@ -28,8 +28,9 @@ export default function History({ session, refreshAll }) {
     refreshAll();
   }
 
-  function remove(idx) {
-    if (!confirm('Delete this record?')) return;
+  async function remove(idx) {
+    const ok = await confirmAsync('Delete this record?', { danger: true, confirmLabel: 'Delete' });
+    if (!ok) return;
     const next = history.filter((_, i) => i !== idx);
     storage.set(keys.history, next);
     refreshAll();

@@ -13,7 +13,7 @@ import Compare from './pages/Compare.jsx';
 import Trends from './pages/Trends.jsx';
 import History from './pages/History.jsx';
 import Admin from './pages/Admin.jsx';
-import { Card, Button, Input } from './components/ui.jsx';
+import { Card, Button, Input, alertAsync } from './components/ui.jsx';
 
 export default function App() {
   const [bootstrapped, setBootstrapped] = useState(false);
@@ -99,9 +99,9 @@ export default function App() {
         cutLine: currentTournament.cutLine ?? cutLine,
       });
       refreshAll();
-      alert('Live scores refreshed from ESPN.');
+      await alertAsync('Live scores refreshed from ESPN.');
     } catch (err) {
-      alert('ESPN fetch failed: ' + err.message + '\n\nTip: ESPN’s public endpoint blocks some networks. The app still works with seeded data + admin controls.');
+      await alertAsync('ESPN fetch failed: ' + err.message + '\n\nTip: ESPN’s public endpoint blocks some networks. The app still works with seeded data + admin controls.');
     }
   }
 

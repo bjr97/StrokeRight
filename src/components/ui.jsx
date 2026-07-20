@@ -1,4 +1,5 @@
 import React from 'react';
+import { createRoot } from 'react-dom/client';
 
 export const TIER_COLORS = {
   1: { bg: 'bg-tier-1/10', border: 'border-tier-1/40', dot: 'bg-tier-1', text: 'text-tier-1' },
@@ -89,4 +90,86 @@ export function StatusBadge({ status }) {
     case 'playing':    return <Pill color="amber">Playing</Pill>;
     default:           return <Pill color="gray">{status}</Pill>;
   }
+}
+
+// ─── Non-blocking confirm/alert ───────────────────────────────────────────
+// window.confirm()/alert() freeze the main thread for as long as they're
+// open, and browsers/perf tools attribute that entire wait time to whatever
+// click handler triggered them — which tanks INP. These render a real modal
+// instead and resolve a Promise, so the main thread never actually blocks.
+
+function DialogShell({ children, onBackdropClick }) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center px-4"
+      onClick={onBackdropClick}
+    >
+      <div
+        className="bg-card border border-border rounded-xl w-full max-w-sm p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ConfirmDialog({ message, danger, confirmLabel, cancelLabel, onConfirm, onCancel }) {
+  return (
+    <DialogShell onBackdropClick={onCancel}>
+      <div className="text-sm whitespace-pre-line">{message}</div>
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" onClick={onCancel}>{cancelLabel}</Button>
+        <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>{confirmLabel}</Button>
+      </div>
+    </DialogShell>
+  );
+}
+
+function AlertDialog({ message, onClose }) {
+  return (
+    <DialogShell onBackdropClick={onClose}>
+      <div className="text-sm whitespace-pre-line">{message}</div>
+      <div className="flex justify-end">
+        <Button onClick={onClose}>OK</Button>
+      </div>
+    </DialogShell>
+  );
+}
+
+function mountDialog(node) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  root.render(node);
+  return () => {
+    root.unmount();
+    container.remove();
+  };
+}
+
+/** Promise<boolean> — resolves true/false instead of blocking the thread. */
+export function confirmAsync(message, opts = {}) {
+  const { danger = false, confirmLabel = 'OK', cancelLabel = 'Cancel' } = opts;
+  return new Promise((resolve) => {
+    const unmount = mountDialog(
+      <ConfirmDialog
+        message={message}
+        danger={danger}
+        confirmLabel={confirmLabel}
+        cancelLabel={cancelLabel}
+        onConfirm={() => { unmount(); resolve(true); }}
+        onCancel={() => { unmount(); resolve(false); }}
+      />
+    );
+  });
+}
+
+/** Promise<void> — resolves when dismissed instead of blocking the thread. */
+export function alertAsync(message) {
+  return new Promise((resolve) => {
+    const unmount = mountDialog(
+      <AlertDialog message={message} onClose={() => { unmount(); resolve(); }} />
+    );
+  });
 }
