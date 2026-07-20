@@ -144,7 +144,8 @@ export default function History({ session, refreshAll }) {
     const strokerRows = [...names].map((name) => {
       const l = legacy.get(name) || { wins: 0, moneyWon: 0 };
       const f = full.get(name);
-      const roi = f && f.feesPaid > 0 ? f.moneyFull / f.feesPaid : null;
+      // ROI = (gain - cost) / cost — net return, not the raw payout multiple.
+      const roi = f && f.feesPaid > 0 ? (f.moneyFull - f.feesPaid) / f.feesPaid : null;
       return {
         name,
         wins: l.wins + (f?.winsFull || 0),
@@ -316,8 +317,9 @@ export default function History({ session, refreshAll }) {
           <StrokerTable rows={sortedStrokers} sort={gSort} onSort={toggleGSort} />
           <p className="text-xs text-muted">
             $ Won includes paid finishes that weren't wins (e.g. a 2nd place that cashed a payout).
-            Entries / $ Spent / ROI / Paid-no-win only reflect majors with full data — ROI compares $ earned
-            to $ spent within that same set. "—" means we don't have enough data yet.
+            Entries / $ Spent / ROI / Paid-no-win only reflect majors with full data. ROI is net return —
+            (money earned − entry fees) ÷ entry fees, within that same set — so 0% means broke even and a
+            negative number means a net loss. "—" means we don't have enough data yet.
           </p>
         </div>
       )}
