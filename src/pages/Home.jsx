@@ -53,12 +53,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
         />
       )}
 
-      {!tournament ? (
-        <Card className="p-6 text-center">
-          <h2 className="text-lg font-medium mb-2">No active tournament</h2>
-          <p className="text-sm text-muted">Ask your admin to set one up.</p>
-        </Card>
-      ) : (
+      {tournament && (
         <>
           <div className="text-center">
             <div className="text-xs text-muted uppercase tracking-wide">Active tournament</div>
