@@ -79,6 +79,8 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
 
   const probs = useMemo(() => computeWinProbabilities(ranked, golfers, {
     roundsRemaining: Math.max(0, 4 - (tournament.currentRound || 1)),
+    currentRound: tournament.currentRound,
+    cutLine: tournament.cutLine,
   }), [ranked, golfers, tournament]);
 
   const { payouts, structure } = computePayouts(ranked, entries.length, tournament.entryFee);
