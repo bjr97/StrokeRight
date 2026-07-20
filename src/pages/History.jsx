@@ -7,6 +7,7 @@ import { Card, Button, Input, Pill, TierDot, confirmAsync } from '../components/
 const TABS = [
   { key: 'majors', label: 'Past majors' },
   { key: 'strokers', label: 'Stroker leaderboard' },
+  { key: 'payouts', label: 'Payouts' },
   { key: 'golfers', label: 'Golfer trends' },
   { key: 'fun', label: 'Fun stats' },
 ];
@@ -15,6 +16,7 @@ export default function History({ session, refreshAll }) {
   const [tab, setTab] = useState('majors');
   const [majorSort, setMajorSort] = useState('year');
   const [gSort, setGSort] = useState({ key: 'moneyWon', dir: -1 });
+  const [pSort, setPSort] = useState({ key: 'timesPaid', dir: -1 });
   const [expandedId, setExpandedId] = useState(null);
   const [editing, setEditing] = useState(null);
 
@@ -81,10 +83,11 @@ export default function History({ session, refreshAll }) {
   // Wins & $ won: across every major (full data or summary).
   // Entries / $ spent / ROI / golfer picks: only from full-data majors —
   // that's the only place we know every stroker's entry, not just the winner's.
-  const { strokerRows, golferRows } = useMemo(() => {
+  const { strokerRows, golferRows, payoutRows } = useMemo(() => {
     const wins = new Map();
     const full = new Map();
     const golferCounts = new Map();
+    const paid = new Map(); // name -> { timesPaid, wins, podiumOnly, placementMoney }
 
     for (const m of majors) {
       const winnerNames = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
@@ -128,6 +131,19 @@ export default function History({ session, refreshAll }) {
         const rec = full.get(w);
         if (rec) rec.moneyWonFull = (rec.moneyWonFull || 0) + (major.prize / winnerNames.length);
       }
+
+      // Every entry that actually got paid — not just the winning rank.
+      // This is how a runner-up who cashed a payout but never won shows up.
+      for (const r of major.ranked || []) {
+        const payout = major.payouts.get(r.entry.id) || 0;
+        if (payout <= 0) continue;
+        const rec = paid.get(r.entry.name) || { timesPaid: 0, wins: 0, podiumOnly: 0, placementMoney: 0 };
+        rec.timesPaid += 1;
+        rec.placementMoney += payout;
+        if (r.rank === 1) rec.wins += 1;
+        else rec.podiumOnly += 1;
+        paid.set(r.entry.name, rec);
+      }
     }
 
     const names = new Set([...wins.keys(), ...full.keys()]);
@@ -150,7 +166,11 @@ export default function History({ session, refreshAll }) {
       .sort((a, b) => b.count - a.count)
       .slice(0, 15);
 
-    return { strokerRows, golferRows };
+    const payoutRows = [...paid.entries()]
+      .map(([name, r]) => ({ name, ...r }))
+      .sort((a, b) => b.timesPaid - a.timesPaid);
+
+    return { strokerRows, golferRows, payoutRows };
   }, [majors, allTournaments]);
 
   const sortedStrokers = useMemo(() => {
@@ -168,6 +188,20 @@ export default function History({ session, refreshAll }) {
 
   function toggleGSort(key) {
     setGSort((s) => (s.key === key ? { key, dir: s.dir * -1 } : { key, dir: -1 }));
+  }
+
+  const sortedPayouts = useMemo(() => {
+    const list = [...payoutRows];
+    list.sort((a, b) => {
+      const av = a[pSort.key], bv = b[pSort.key];
+      if (typeof av === 'string') return av.localeCompare(bv) * pSort.dir;
+      return (av - bv) * pSort.dir;
+    });
+    return list;
+  }, [payoutRows, pSort]);
+
+  function togglePSort(key) {
+    setPSort((s) => (s.key === key ? { key, dir: s.dir * -1 } : { key, dir: -1 }));
   }
 
   const fun = useMemo(() => {
@@ -195,8 +229,12 @@ export default function History({ session, refreshAll }) {
       .reduce((a, b) => ((b.entries || 0) > (a?.entries || 0) ? b : a), null);
     const topGolfer = golferRows[0] || null;
 
-    return { mostWins, topWins, biggestPrize, highestScore, biggestField, bestRoi, ironMan, topGolfer };
-  }, [majors, strokerRows, golferRows]);
+    const bridesmaids = payoutRows.filter((r) => r.podiumOnly > 0);
+    const topPodiumOnly = bridesmaids.length ? Math.max(...bridesmaids.map((r) => r.podiumOnly)) : 0;
+    const bridesmaid = topPodiumOnly > 0 ? bridesmaids.filter((r) => r.podiumOnly === topPodiumOnly) : [];
+
+    return { mostWins, topWins, biggestPrize, highestScore, biggestField, bestRoi, ironMan, topGolfer, bridesmaid, topPodiumOnly };
+  }, [majors, strokerRows, golferRows, payoutRows]);
 
   function save(idx, draft) {
     const next = [...history];
@@ -303,6 +341,17 @@ export default function History({ session, refreshAll }) {
             Entries / $ Spent / ROI only reflect majors with full data. ROI compares $ won to $ spent within
             that same set — it won't count a legacy win with no known entry cost. "—" means we don't have
             enough data yet.
+          </p>
+        </div>
+      )}
+
+      {tab === 'payouts' && (
+        <div className="space-y-2">
+          <PayoutsTable rows={sortedPayouts} sort={pSort} onSort={togglePSort} />
+          <p className="text-xs text-muted">
+            Every finish that actually cashed a payout, not just wins — so a runner-up who got paid but didn't
+            win still shows up here. Only covers majors with full data, since summary-only majors just recorded
+            the winner.
           </p>
         </div>
       )}
@@ -420,6 +469,49 @@ function StrokerTable({ rows, sort, onSort }) {
   );
 }
 
+function PayoutsTable({ rows, sort, onSort }) {
+  const cols = [
+    { key: 'name', label: 'Stroker', left: true },
+    { key: 'timesPaid', label: 'Times paid' },
+    { key: 'wins', label: 'Wins' },
+    { key: 'podiumOnly', label: 'Paid, no win' },
+    { key: 'placementMoney', label: '$ From placements' },
+  ];
+  return (
+    <Card className="p-3 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr>
+            {cols.map((c) => (
+              <th
+                key={c.key}
+                onClick={() => onSort(c.key)}
+                className={`text-[11px] uppercase tracking-wide text-muted pb-2 cursor-pointer select-none whitespace-nowrap ${c.left ? 'text-left' : 'text-right'} ${sort.key === c.key ? 'text-accent' : ''}`}
+              >
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.name} className="border-t border-border">
+              <td className="py-2 pr-2">{r.name}</td>
+              <td className="py-2 text-right tabular-nums">{r.timesPaid}</td>
+              <td className="py-2 text-right tabular-nums">{r.wins}</td>
+              <td className="py-2 text-right tabular-nums text-warn">{r.podiumOnly}</td>
+              <td className="py-2 text-right tabular-nums text-accent">{fm(r.placementMoney)}</td>
+            </tr>
+          ))}
+          {!rows.length && (
+            <tr><td colSpan={5} className="py-4 text-center text-muted text-sm">No paid finishes yet.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
 function GolferBars({ rows }) {
   const max = rows[0]?.count || 1;
   return (
@@ -469,6 +561,11 @@ function FunStats({ fun }) {
       label: 'Fan favorite golfer',
       value: fun.topGolfer?.name || '—',
       sub: fun.topGolfer ? `Picked ${fun.topGolfer.count}× across full-data majors` : 'Not enough data yet',
+    },
+    {
+      label: 'Always the bridesmaid',
+      value: fun.bridesmaid.length ? fun.bridesmaid.map((r) => r.name).join(' & ') : '—',
+      sub: fun.topPodiumOnly > 0 ? `Paid out ${fun.topPodiumOnly}× without ever winning` : 'Not enough data yet',
     },
     {
       label: 'Highest winning score',
