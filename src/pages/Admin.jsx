@@ -4,7 +4,7 @@ import { seedDemoMasters } from '../lib/seedData.js';
 import { finalStandings } from '../lib/scoring.js';
 import { fmtMoney } from '../lib/payouts.js';
 import { Card, Button, Input, Select, Pill, TierDot, TIER_COLORS, fmtToPar, confirmAsync, alertAsync } from '../components/ui.jsx';
-import { EVENT_TYPES } from '../lib/eventTypes.js';
+import { EVENT_TYPES, autoTournamentName } from '../lib/eventTypes.js';
 
 export default function Admin({ tournament, golfers, refreshAll }) {
   const [tab, setTab] = useState(tournament ? 'manage' : 'create');
@@ -50,12 +50,19 @@ function CreateTournament({ refreshAll }) {
     name: '', startDate: '', deadline: '', poolCode: '', course: '', eventType: 'other',
   });
 
+  const nameLocked = form.eventType !== 'other';
+  const computedName = autoTournamentName(form.eventType, form.startDate);
+
   async function save() {
-    if (!form.name || !form.poolCode) return alertAsync('Name and pool code are required');
-    const id = form.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) + '-' + Date.now().toString(36);
+    if (nameLocked && !computedName) {
+      return alertAsync('Pick a start date first so the name can be generated — or choose "Other" to type a name manually.');
+    }
+    const name = nameLocked ? computedName : form.name;
+    if (!name || !form.poolCode) return alertAsync('Name and pool code are required');
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) + '-' + Date.now().toString(36);
     const t = {
       id,
-      name: form.name,
+      name,
       course: form.course,
       startDate: form.startDate,
       deadline: form.deadline,
@@ -77,13 +84,21 @@ function CreateTournament({ refreshAll }) {
 
   return (
     <Card className="p-5 space-y-4">
-      <Field label="Tournament name"><Input value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="2026 PGA Championship" /></Field>
       <Field label="Event type"><Select value={form.eventType} onChange={(v) => setForm({ ...form, eventType: v })} options={EVENT_TYPES} className="w-full" /></Field>
-      <Field label="Course"><Input value={form.course} onChange={(v) => setForm({ ...form, course: v })} placeholder="Quail Hollow" /></Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Start date"><Input type="date" value={form.startDate} onChange={(v) => setForm({ ...form, startDate: v })} /></Field>
         <Field label="Deadline (Wed 11:59 pm)"><Input type="datetime-local" value={form.deadline} onChange={(v) => setForm({ ...form, deadline: v })} /></Field>
       </div>
+      <Field label="Tournament name">
+        {nameLocked ? (
+          <div className="px-3 py-2 bg-bg border border-border rounded-lg text-sm">
+            {computedName || <span className="text-muted">Set a start date above to generate the name</span>}
+          </div>
+        ) : (
+          <Input value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="e.g. 2026 Member-Guest Classic" />
+        )}
+      </Field>
+      <Field label="Course"><Input value={form.course} onChange={(v) => setForm({ ...form, course: v })} placeholder="Quail Hollow" /></Field>
       <Field label="Pool code (share with participants)"><Input value={form.poolCode} onChange={(v) => setForm({ ...form, poolCode: v })} placeholder="masters26" /></Field>
       <Button onClick={save}>Create tournament</Button>
     </Card>

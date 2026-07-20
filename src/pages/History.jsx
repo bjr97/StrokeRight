@@ -4,8 +4,8 @@ import { buildMajors } from '../lib/majors.js';
 import { fmtMoney as fm } from '../lib/payouts.js';
 import { fmtDate } from '../lib/format.js';
 import { oddsToNum } from '../lib/odds.js';
-import { Card, Button, Input, Select, Pill, TierDot, confirmAsync } from '../components/ui.jsx';
-import { EVENT_TYPES, eventTypeLabel } from '../lib/eventTypes.js';
+import { Card, Button, Input, Select, Pill, TierDot, confirmAsync, alertAsync } from '../components/ui.jsx';
+import { EVENT_TYPES, eventTypeLabel, autoTournamentName } from '../lib/eventTypes.js';
 
 const TABS = [
   { key: 'majors', label: 'Past majors' },
@@ -634,15 +634,23 @@ function blankRecord() {
 function EditModal({ record, onSave, onCancel }) {
   const [d, setD] = useState({ eventType: 'other', ...record.draft, team: (record.draft.team || []).join(', ') });
 
-  function submit() {
+  const nameLocked = d.eventType !== 'other';
+  const computedName = autoTournamentName(d.eventType, d.date);
+
+  async function submit() {
+    if (nameLocked && !computedName) {
+      return alertAsync('Enter a date first so the name can be generated — or choose "Other" to type a name manually.');
+    }
+    const name = nameLocked ? computedName : d.name;
     const draft = {
       ...d,
+      name,
       team: d.team.split(',').map((s) => s.trim()).filter(Boolean),
       points: Number(d.points),
       entries: Number(d.entries),
       prize: Number(d.prize),
     };
-    if (!draft.id) draft.id = draft.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36);
+    if (!draft.id) draft.id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36);
     onSave(record.idx, draft);
   }
 
@@ -650,9 +658,15 @@ function EditModal({ record, onSave, onCancel }) {
     <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center px-4">
       <Card className="w-full max-w-md p-5 space-y-3">
         <div className="font-medium">{record.idx == null || record.idx < 0 ? 'Add' : 'Edit'} major (summary only)</div>
-        <Input value={d.name} onChange={(v) => setD({ ...d, name: v })} placeholder="Tournament name" />
         <Select value={d.eventType} onChange={(v) => setD({ ...d, eventType: v })} options={EVENT_TYPES} className="w-full" />
         <Input value={d.date} onChange={(v) => setD({ ...d, date: v })} placeholder="Date (YYYY-MM-DD)" />
+        {nameLocked ? (
+          <div className="px-3 py-2 bg-bg border border-border rounded-lg text-sm">
+            {computedName || <span className="text-muted">Enter a date above to generate the name</span>}
+          </div>
+        ) : (
+          <Input value={d.name} onChange={(v) => setD({ ...d, name: v })} placeholder="Tournament name" />
+        )}
         <Input value={d.winner} onChange={(v) => setD({ ...d, winner: v })} placeholder="Winner name" />
         <Input value={d.team} onChange={(v) => setD({ ...d, team: v })} placeholder="Team (comma-separated last names)" />
         <div className="grid grid-cols-3 gap-2">

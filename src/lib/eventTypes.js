@@ -12,3 +12,27 @@ export const EVENT_TYPE_LABEL = Object.fromEntries(EVENT_TYPES.map((e) => [e.val
 export function eventTypeLabel(value) {
   return EVENT_TYPE_LABEL[value] || EVENT_TYPE_LABEL.other;
 }
+
+// Naming template per type -- deliberately distinct from the dropdown label
+// above (e.g. "Masters" here vs "The Masters" in the picker), to match the
+// naming convention already used throughout the app's existing data ("2025
+// Masters", "2026 Open Championship", etc).
+const NAME_TEMPLATE = {
+  wm_open: 'WM Open',
+  masters: 'Masters',
+  us_open: 'US Open',
+  pga: 'PGA Championship',
+  open: 'Open Championship',
+};
+
+// Auto-generates "{year} {template}" from an event type + any date string
+// (YYYY-MM-DD or full ISO both work). Returns null for 'other' (manual entry
+// applies there) or when there's no usable date yet to pull a year from.
+export function autoTournamentName(eventType, dateStr) {
+  if (eventType === 'other' || !dateStr) return null;
+  const year = parseInt(String(dateStr).slice(0, 4), 10);
+  if (!Number.isFinite(year)) return null;
+  const template = NAME_TEMPLATE[eventType];
+  if (!template) return null;
+  return `${year} ${template}`;
+}
