@@ -4,7 +4,8 @@ import { buildMajors } from '../lib/majors.js';
 import { fmtMoney as fm } from '../lib/payouts.js';
 import { fmtDate } from '../lib/format.js';
 import { oddsToNum } from '../lib/odds.js';
-import { Card, Button, Input, Pill, TierDot, confirmAsync } from '../components/ui.jsx';
+import { Card, Button, Input, Select, Pill, TierDot, confirmAsync } from '../components/ui.jsx';
+import { EVENT_TYPES, eventTypeLabel } from '../lib/eventTypes.js';
 
 const TABS = [
   { key: 'majors', label: 'Past majors' },
@@ -19,6 +20,8 @@ export default function History({ session, refreshAll }) {
   const [gSort, setGSort] = useState({ key: 'moneyWon', dir: -1 });
   const [expandedId, setExpandedId] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [eventTypeFilter, setEventTypeFilter] = useState('all');
+  const [yearFilter, setYearFilter] = useState('all');
 
   const history = storage.get(keys.history) || [];
   const allTournaments = listTournaments();
@@ -29,7 +32,24 @@ export default function History({ session, refreshAll }) {
   // "Summary only" = a `history` row with no matching tournament left — the
   // legacy/manually-entered case where only the winner was ever recorded.
   // (Shared with the Home page's recent-majors section — see lib/majors.js.)
-  const majors = useMemo(() => buildMajors(), [allTournaments, history]);
+  const allMajors = useMemo(() => buildMajors(), [allTournaments, history]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set(allMajors.map((m) => (m.date || '').slice(0, 4)).filter(Boolean));
+    return [...years].sort((a, b) => b.localeCompare(a));
+  }, [allMajors]);
+
+  // Filtering happens once, here, on the base list — every tab (Stroker
+  // leaderboard, Golfer trends, Fun stats, Payouts) derives from this same
+  // `majors` array, so picking an event type / year filters everything at
+  // once rather than needing separate logic per tab.
+  const majors = useMemo(() => {
+    return allMajors.filter((m) => {
+      if (eventTypeFilter !== 'all' && (m.eventType || 'other') !== eventTypeFilter) return false;
+      if (yearFilter !== 'all' && (m.date || '').slice(0, 4) !== yearFilter) return false;
+      return true;
+    });
+  }, [allMajors, eventTypeFilter, yearFilter]);
 
   const sortedMajors = useMemo(() => {
     const list = [...majors];
@@ -282,6 +302,29 @@ export default function History({ session, refreshAll }) {
         ))}
       </div>
 
+      <div className="flex items-center gap-2 flex-wrap">
+        <Select
+          value={eventTypeFilter}
+          onChange={setEventTypeFilter}
+          options={[{ value: 'all', label: 'All events' }, ...EVENT_TYPES]}
+          className="text-sm"
+        />
+        <Select
+          value={yearFilter}
+          onChange={setYearFilter}
+          options={[{ value: 'all', label: 'All years' }, ...availableYears.map((y) => ({ value: y, label: y }))]}
+          className="text-sm"
+        />
+        {(eventTypeFilter !== 'all' || yearFilter !== 'all') && (
+          <button
+            onClick={() => { setEventTypeFilter('all'); setYearFilter('all'); }}
+            className="text-xs text-muted hover:text-text underline"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
       {tab === 'majors' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
@@ -362,7 +405,10 @@ function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
           <div className="font-medium truncate">{m.name}</div>
           <div className="text-xs text-muted mt-0.5">{fmtDate(m.date)} · {m.entryCount ?? '—'} entries</div>
         </div>
-        <Pill color={m.fullData ? 'green' : 'gray'}>{m.fullData ? 'Full data' : 'Summary only'}</Pill>
+        <div className="flex gap-1 shrink-0">
+          <Pill color="gray">{eventTypeLabel(m.eventType)}</Pill>
+          <Pill color={m.fullData ? 'green' : 'gray'}>{m.fullData ? 'Full data' : 'Summary only'}</Pill>
+        </div>
       </div>
 
       <div className="text-xs text-muted mt-2">
@@ -582,11 +628,11 @@ function FunStats({ fun }) {
 }
 
 function blankRecord() {
-  return { id: '', name: '', date: '', winner: '', team: [], points: 0, entries: 0, prize: 0 };
+  return { id: '', name: '', date: '', winner: '', team: [], points: 0, entries: 0, prize: 0, eventType: 'other' };
 }
 
 function EditModal({ record, onSave, onCancel }) {
-  const [d, setD] = useState({ ...record.draft, team: (record.draft.team || []).join(', ') });
+  const [d, setD] = useState({ eventType: 'other', ...record.draft, team: (record.draft.team || []).join(', ') });
 
   function submit() {
     const draft = {
@@ -605,6 +651,7 @@ function EditModal({ record, onSave, onCancel }) {
       <Card className="w-full max-w-md p-5 space-y-3">
         <div className="font-medium">{record.idx == null || record.idx < 0 ? 'Add' : 'Edit'} major (summary only)</div>
         <Input value={d.name} onChange={(v) => setD({ ...d, name: v })} placeholder="Tournament name" />
+        <Select value={d.eventType} onChange={(v) => setD({ ...d, eventType: v })} options={EVENT_TYPES} className="w-full" />
         <Input value={d.date} onChange={(v) => setD({ ...d, date: v })} placeholder="Date (YYYY-MM-DD)" />
         <Input value={d.winner} onChange={(v) => setD({ ...d, winner: v })} placeholder="Winner name" />
         <Input value={d.team} onChange={(v) => setD({ ...d, team: v })} placeholder="Team (comma-separated last names)" />

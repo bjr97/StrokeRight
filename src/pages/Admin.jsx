@@ -3,7 +3,8 @@ import { storage, keys, listTournaments, setActiveTournamentId, getActiveTournam
 import { seedDemoMasters } from '../lib/seedData.js';
 import { finalStandings } from '../lib/scoring.js';
 import { fmtMoney } from '../lib/payouts.js';
-import { Card, Button, Input, Pill, TierDot, TIER_COLORS, fmtToPar, confirmAsync, alertAsync } from '../components/ui.jsx';
+import { Card, Button, Input, Select, Pill, TierDot, TIER_COLORS, fmtToPar, confirmAsync, alertAsync } from '../components/ui.jsx';
+import { EVENT_TYPES } from '../lib/eventTypes.js';
 
 export default function Admin({ tournament, golfers, refreshAll }) {
   const [tab, setTab] = useState(tournament ? 'manage' : 'create');
@@ -46,7 +47,7 @@ export default function Admin({ tournament, golfers, refreshAll }) {
 
 function CreateTournament({ refreshAll }) {
   const [form, setForm] = useState({
-    name: '', startDate: '', deadline: '', poolCode: '', course: '',
+    name: '', startDate: '', deadline: '', poolCode: '', course: '', eventType: 'other',
   });
 
   async function save() {
@@ -65,6 +66,7 @@ function CreateTournament({ refreshAll }) {
       currentRound: 1,
       status: 'setup',
       tierLabels: ['Dark blue', 'Orange', 'Dark green', 'Light blue', 'Light green', 'Yellow'],
+      eventType: form.eventType,
     };
     storage.set(keys.tournament(id), t);
     storage.set(keys.golfers(id), []);
@@ -76,6 +78,7 @@ function CreateTournament({ refreshAll }) {
   return (
     <Card className="p-5 space-y-4">
       <Field label="Tournament name"><Input value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="2026 PGA Championship" /></Field>
+      <Field label="Event type"><Select value={form.eventType} onChange={(v) => setForm({ ...form, eventType: v })} options={EVENT_TYPES} className="w-full" /></Field>
       <Field label="Course"><Input value={form.course} onChange={(v) => setForm({ ...form, course: v })} placeholder="Quail Hollow" /></Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Start date"><Input type="date" value={form.startDate} onChange={(v) => setForm({ ...form, startDate: v })} /></Field>
@@ -117,14 +120,22 @@ function ManageTournaments({ active, refreshAll }) {
     <div className="space-y-2">
       <NextMajorCard refreshAll={refreshAll} />
       {all.map((t) => (
-        <Card key={t.id} className="p-4 flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
+        <Card key={t.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium">{t.name}</span>
               {t.id === activeId && <Pill color="green">Active</Pill>}
               <Pill color={t.status === 'live' ? 'amber' : t.status === 'completed' ? 'green' : 'gray'}>{t.status}</Pill>
             </div>
             <div className="text-xs text-muted mt-1">Code: <code className="text-text">{t.poolCode}</code> · Deadline {t.deadline || 'TBD'}</div>
+            <div className="mt-2">
+              <Select
+                value={t.eventType || 'other'}
+                onChange={(v) => { storage.set(keys.tournament(t.id), { ...t, eventType: v }); refreshAll(); }}
+                options={EVENT_TYPES}
+                className="text-xs py-1"
+              />
+            </div>
           </div>
           <div className="flex gap-2">
             {t.id !== activeId && (

@@ -76,6 +76,20 @@ export function Input({ value, onChange, placeholder, type = 'text', className =
   );
 }
 
+export function Select({ value, onChange, options, className = '' }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={`px-3 py-2 bg-bg border border-border rounded-lg text-text focus:outline-none focus:border-accent ${className}`}
+    >
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>{o.label}</option>
+      ))}
+    </select>
+  );
+}
+
 export function fmtToPar(n) {
   if (n == null) return '—';
   if (n === 0) return 'E';

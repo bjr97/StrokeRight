@@ -297,6 +297,7 @@ function toTournamentRow(t) {
     current_round: t.currentRound ?? 1,
     status: t.status ?? 'setup',
     tier_labels: t.tierLabels,
+    event_type: t.eventType || 'other',
     updated_at: new Date().toISOString(),
   };
 }
@@ -314,6 +315,7 @@ function fromTournamentRow(r) {
     currentRound: r.current_round,
     status: r.status,
     tierLabels: r.tier_labels,
+    eventType: r.event_type || 'other',
   };
 }
 
@@ -362,6 +364,7 @@ function toHistoryRow(h) {
     points: h.points,
     entries: h.entries,
     prize: h.prize,
+    event_type: h.eventType || 'other',
   };
 }
 function fromHistoryRow(r) {
@@ -374,6 +377,7 @@ function fromHistoryRow(r) {
     points: r.points,
     entries: r.entries,
     prize: r.prize,
+    eventType: r.event_type || 'other',
   };
 }
 
