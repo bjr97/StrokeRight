@@ -70,6 +70,29 @@ export function buildMajors() {
 // a tie for the win, then a notable longshot pick on the winning team, then
 // how close/lopsided the margin was. Returns null if nothing stands out (or
 // there isn't enough data to tell, e.g. a summary-only legacy major).
+// Names of the stroker(s) who won the most recent PAST major of the same
+// event type as `tournament` (a true "defending champion" lookup — same
+// event only, exactly one edition back, not just whoever won most recently
+// overall). Returns [] if the event type is 'other' (no meaningful
+// defending-champion concept for a catch-all category), if there's no prior
+// edition on record, or if `tournament` has no usable start date to anchor
+// "previous" against.
+export function getDefendingChampions(tournament) {
+  if (!tournament?.eventType || tournament.eventType === 'other') return [];
+  if (!tournament.startDate) return [];
+  const currentDate = new Date(tournament.startDate);
+  if (isNaN(currentDate)) return [];
+
+  const priorEditions = buildMajors()
+    .filter((m) => m.eventType === tournament.eventType && m.date)
+    .filter((m) => new Date(m.date) < currentDate)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const mostRecent = priorEditions[0];
+  if (!mostRecent?.winner) return [];
+  return mostRecent.winner.split(' & ').map((s) => s.trim()).filter(Boolean);
+}
+
 function computeHighlight(m, tGolfers) {
   const winners = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
   if (winners.length > 1) return `Tie for the win between ${winners.join(' & ')}`;

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
 import { computeWinProbabilities } from '../lib/winProb.js';
+import { getDefendingChampions } from '../lib/majors.js';
 import { picksRevealed, deadlineLabel } from '../lib/gating.js';
 import { Card, Stat, Pill, StatusBadge, TierDot, fmtToPar, Input } from '../components/ui.jsx';
 
@@ -83,6 +84,8 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
     cutLine: tournament.cutLine,
   }), [ranked, golfers, tournament]);
 
+  const defendingChampions = useMemo(() => getDefendingChampions(tournament), [tournament]);
+
   const { payouts, structure } = computePayouts(ranked, entries.length, tournament.entryFee);
 
   // Position change since last snapshot
@@ -125,10 +128,16 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
           const payout = payouts.get(row.entry.id);
           const prob = probs.get(row.entry.id);
           const isMine = row.entry.name.toLowerCase() === (session?.name || '').toLowerCase();
+          const isDefendingChamp = defendingChampions.some(
+            (n) => n.toLowerCase() === row.entry.name.toLowerCase()
+          );
           const showDetails = revealed || isMine;
 
           return (
-            <Card key={row.entry.id} className="overflow-hidden">
+            <Card
+              key={row.entry.id}
+              className={`overflow-hidden ${isDefendingChamp ? 'shadow-[0_0_0_1px_#D29922,0_0_18px_-4px_#D29922]' : ''}`}
+            >
               <button
                 onClick={() => showDetails && setExpanded(expanded === row.entry.id ? null : row.entry.id)}
                 className={`w-full text-left px-3 py-3 flex items-center justify-between transition ${showDetails ? 'hover:bg-bg cursor-pointer' : 'cursor-default'}`}
@@ -144,6 +153,7 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
                       <span className="font-medium truncate">{row.entry.name}</span>
                       <span className="text-xs text-muted">Entry {row.entry.entryNum}</span>
                       {isMine && !revealed && <Pill color="green">you</Pill>}
+                      {isDefendingChamp && <Pill color="amber">👑 Defending champ</Pill>}
                       {revealed && change > 0 && <span className="text-xs text-accent">↑{change}</span>}
                       {revealed && change < 0 && <span className="text-xs text-danger">↓{-change}</span>}
                     </div>
