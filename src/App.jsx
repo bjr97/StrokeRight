@@ -156,7 +156,7 @@ export default function App() {
     <div className="min-h-screen">
       <Nav page={page} onChange={setPage} session={session} onLogout={handleLogout} />
 
-      <main key={tick} className="pb-20 md:pb-0">
+      <main className="pb-20 md:pb-0">
         {page === 'home' && <Home tournament={tournament} golfers={golfers} entries={entries} session={session} onNav={setPage} />}
         {page === 'submit' && tournament && <Submit tournament={tournament} golfers={golfers} entries={entries} session={session} refreshAll={refreshAll} />}
         {page === 'players' && tournament && <Players tournament={tournament} golfers={golfers} entries={entries} session={session} onNavToLeaderboard={() => setPage('leaderboard')} />}

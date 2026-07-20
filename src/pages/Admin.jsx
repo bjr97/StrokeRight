@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { storage, keys, listTournaments, setActiveTournamentId, getActiveTournamentId } from '../lib/storage.js';
 import { seedDemoMasters } from '../lib/seedData.js';
 import { finalStandings } from '../lib/scoring.js';
@@ -7,6 +7,15 @@ import { Card, Button, Input, Pill, TierDot, TIER_COLORS, fmtToPar, confirmAsync
 
 export default function Admin({ tournament, golfers, refreshAll }) {
   const [tab, setTab] = useState(tournament ? 'manage' : 'create');
+
+  // Previously a parent-level remount reset this whenever `tournament`
+  // changed identity (e.g. after "Mark tournament complete" clears the
+  // active tournament). That remount also wiped every other page's local
+  // UI state on any background refresh, so it's gone now — this replaces
+  // just the one thing it was actually needed for here.
+  useEffect(() => {
+    if (!tournament && (tab === 'tiers' || tab === 'live')) setTab('manage');
+  }, [tournament, tab]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-32 md:pb-6 space-y-6">
@@ -221,6 +230,17 @@ function LiveControls({ tournament, golfers, refreshAll }) {
   const [round, setRound] = useState(tournament.currentRound);
   const [cutLine, setCutLine] = useState(tournament.cutLine ?? '');
   const entries = storage.get(keys.entries(tournament.id)) || [];
+
+  // These start from the tournament prop but only capture it once (useState
+  // initializers only run on mount). Re-sync whenever the underlying data
+  // actually changes (e.g. an ESPN refresh or another admin's edit lands),
+  // rather than relying on the parent to force a full remount to pick it up —
+  // that remount approach was also nuking unrelated UI state (like History's
+  // active tab) on every background refresh.
+  useEffect(() => {
+    setRound(tournament.currentRound);
+    setCutLine(tournament.cutLine ?? '');
+  }, [tournament.id, tournament.currentRound, tournament.cutLine]);
 
   async function completeTournament() {
     if (!entries.length) return alertAsync('No entries yet — nothing to finalize.');
