@@ -3,6 +3,8 @@
 // Golfer status values: 'playing' | 'made_cut' | 'missed_cut' | 'withdrawn'
 // `withdrawnAfterCut`: true if WD happened after start of R3 AND golfer had made the cut.
 
+import { computePayouts } from './payouts.js';
+
 /**
  * Score a single golfer for a given entry.
  * @param {object} golfer - { strokesToPar, status, won, withdrawnAfterCut }
@@ -118,4 +120,32 @@ export function rankEntries(entries, golfers, opts) {
     }
   });
   return scored;
+}
+
+/**
+ * Compute the final winner(s), points, prize, and picked team for a
+ * tournament from its current entries + golfers, splitting ties across
+ * winners. Used both when marking a tournament complete (Admin → Live
+ * controls) and by the History page, so a completed tournament's displayed
+ * standings always reflect the live data — including any score correction
+ * made after the fact — rather than a snapshot taken at completion time.
+ * Returns null if there are no entries to rank.
+ */
+export function finalStandings(tournament, golfers, entries) {
+  if (!entries.length) return null;
+  const ranked = rankEntries(entries, golfers, {
+    tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
+    cutLine: tournament.cutLine,
+    currentRound: tournament.currentRound,
+  });
+  const { payouts } = computePayouts(ranked, entries.length, tournament.entryFee);
+
+  const topRank = ranked[0].rank;
+  const winners = ranked.filter((r) => r.rank === topRank);
+  const winnerNames = winners.map((w) => w.entry.name).join(' & ');
+  const team = [...new Set(winners.flatMap((w) => w.scored.map((s) => s.golfer.name)))];
+  const points = winners[0].total;
+  const prize = winners.reduce((sum, w) => sum + (payouts.get(w.entry.id) || 0), 0);
+
+  return { ranked, payouts, winners, winnerNames, team, points, prize };
 }

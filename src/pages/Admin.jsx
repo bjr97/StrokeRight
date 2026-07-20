@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { storage, keys, listTournaments, setActiveTournamentId, getActiveTournamentId } from '../lib/storage.js';
 import { seedDemoMasters } from '../lib/seedData.js';
-import { rankEntries } from '../lib/scoring.js';
-import { computePayouts, fmtMoney } from '../lib/payouts.js';
+import { finalStandings } from '../lib/scoring.js';
+import { fmtMoney } from '../lib/payouts.js';
 import { Card, Button, Input, Pill, TierDot, TIER_COLORS, fmtToPar, confirmAsync, alertAsync } from '../components/ui.jsx';
 
 export default function Admin({ tournament, golfers, refreshAll }) {
@@ -225,19 +225,8 @@ function LiveControls({ tournament, golfers, refreshAll }) {
   async function completeTournament() {
     if (!entries.length) return alertAsync('No entries yet — nothing to finalize.');
 
-    const ranked = rankEntries(entries, golfers, {
-      tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
-      cutLine: tournament.cutLine,
-      currentRound: tournament.currentRound,
-    });
-    const { payouts } = computePayouts(ranked, entries.length, tournament.entryFee);
-
-    const topRank = ranked[0].rank;
-    const winners = ranked.filter((r) => r.rank === topRank);
-    const winnerNames = winners.map((w) => w.entry.name).join(' & ');
-    const team = [...new Set(winners.flatMap((w) => w.scored.map((s) => s.golfer.name)))];
-    const points = winners[0].total;
-    const prize = winners.reduce((sum, w) => sum + (payouts.get(w.entry.id) || 0), 0);
+    const fs = finalStandings(tournament, golfers, entries);
+    const { winnerNames, team, points, prize } = fs;
 
     const stillPlaying = golfers.some((g) => g.status === 'playing');
     const warning = stillPlaying
