@@ -84,10 +84,12 @@ export default function History({ session, refreshAll }) {
   // Entries / $ spent / ROI / podiums / golfer picks: only from full-data
   // majors — that's the only place we know every stroker's entry and every
   // paid position, not just the winner's.
-  const { strokerRows, golferRows } = useMemo(() => {
+  const { strokerRows, golferRows, longestShot, totalPicksLogged } = useMemo(() => {
     const legacy = new Map(); // name -> { wins, moneyWon } — from summary-only majors
     const full = new Map();   // name -> { entries, feesPaid, winsFull, podiumOnly, moneyFull }
     const golferCounts = new Map();
+    let longestShot = null; // { name, odds, oddsNum } — worst odds ever actually picked
+    let totalPicksLogged = 0;
 
     for (const m of majors) {
       if (m.fullData) continue;
@@ -120,10 +122,15 @@ export default function History({ session, refreshAll }) {
         for (const gid of e.golferIds || []) {
           const g = golferLookup.get(gid);
           if (!g) continue;
+          totalPicksLogged += 1;
           const grec = golferCounts.get(g.name) || { count: 0, tier: g.tier };
           grec.count += 1;
           grec.tier = g.tier;
           golferCounts.set(g.name, grec);
+          const oddsNum = oddsToNum(g.odds);
+          if (oddsNum >= 0 && (!longestShot || oddsNum > longestShot.oddsNum)) {
+            longestShot = { name: g.name, odds: g.odds, oddsNum };
+          }
         }
       }
 
@@ -162,7 +169,7 @@ export default function History({ session, refreshAll }) {
       .sort((a, b) => b.count - a.count)
       .slice(0, 15);
 
-    return { strokerRows, golferRows };
+    return { strokerRows, golferRows, longestShot, totalPicksLogged };
   }, [majors, allTournaments]);
 
   const sortedStrokers = useMemo(() => {
@@ -187,7 +194,7 @@ export default function History({ session, refreshAll }) {
     const topWins = Math.max(0, ...strokerRows.map((r) => r.wins));
     const mostWins = strokerRows.filter((r) => r.wins === topWins && topWins > 0);
 
-    let biggestPrize = null, highestScore = null, biggestField = null;
+    let biggestPrize = null, highestScore = null, biggestField = null, toughestTest = null, totalPaidOut = 0;
     for (const m of majors) {
       if (m.prize != null && (!biggestPrize || m.prize > biggestPrize.amount)) {
         biggestPrize = { amount: m.prize, who: m.winner, major: m.name };
@@ -195,8 +202,19 @@ export default function History({ session, refreshAll }) {
       if (m.points != null && (!highestScore || m.points > highestScore.points)) {
         highestScore = { points: m.points, who: m.winner, major: m.name };
       }
+      if (m.points != null && (!toughestTest || m.points < toughestTest.points)) {
+        toughestTest = { points: m.points, who: m.winner, major: m.name };
+      }
       if (m.entryCount != null && (!biggestField || m.entryCount > biggestField.entryCount)) {
         biggestField = { entryCount: m.entryCount, major: m.name };
+      }
+      // Total paid out: every dollar we know changed hands. Full-data majors
+      // have every payout on record; summary-only majors only ever recorded
+      // the winner's, so that's all we can add for those.
+      if (m.fullData && m.payouts) {
+        for (const amt of m.payouts.values()) totalPaidOut += amt;
+      } else if (m.prize != null) {
+        totalPaidOut += m.prize;
       }
     }
 
@@ -211,8 +229,40 @@ export default function History({ session, refreshAll }) {
     const topPodiumOnly = bridesmaids.length ? Math.max(...bridesmaids.map((r) => r.podiumOnly)) : 0;
     const bridesmaid = topPodiumOnly > 0 ? bridesmaids.filter((r) => r.podiumOnly === topPodiumOnly) : [];
 
-    return { mostWins, topWins, biggestPrize, highestScore, biggestField, bestRoi, ironMan, topGolfer, bridesmaid, topPodiumOnly };
-  }, [majors, strokerRows, golferRows]);
+    // Most entries with zero wins — the pool's most loyal non-champion.
+    const ringless = strokerRows.filter((r) => r.wins === 0 && r.entries != null && r.entries > 0);
+    const mostLoyal = ringless.length ? ringless.reduce((a, b) => ((b.entries || 0) > (a.entries || 0) ? b : a)) : null;
+
+    // Nail-biter / runaway: margin between the winning score and the next
+    // distinct score group, for full-data majors only (need the runner-up's
+    // actual score, which summary-only majors never recorded).
+    let nailBiter = null, runaway = null, cheapestCash = null;
+    for (const m of majors) {
+      if (!m.fullData || !m.ranked?.length) continue;
+
+      const totals = [...new Set(m.ranked.map((r) => r.total))].sort((a, b) => b - a);
+      if (totals.length >= 2) {
+        const margin = totals[0] - totals[1];
+        if (!nailBiter || margin < nailBiter.margin) nailBiter = { margin, major: m.name, winner: m.winner };
+        if (!runaway || margin > runaway.margin) runaway = { margin, major: m.name, winner: m.winner };
+      }
+
+      // Lowest score that still cashed a payout — "backed into it."
+      for (const r of m.ranked) {
+        const payout = m.payouts.get(r.entry.id) || 0;
+        if (payout <= 0) continue;
+        if (!cheapestCash || r.total < cheapestCash.points) {
+          cheapestCash = { points: r.total, who: r.entry.name, major: m.name, payout };
+        }
+      }
+    }
+
+    return {
+      mostWins, topWins, biggestPrize, highestScore, biggestField, bestRoi, ironMan, topGolfer,
+      bridesmaid, topPodiumOnly, toughestTest, totalPaidOut, mostLoyal, nailBiter, runaway,
+      cheapestCash, longestShot, totalPicksLogged,
+    };
+  }, [majors, strokerRows, golferRows, longestShot, totalPicksLogged]);
 
   function save(idx, draft) {
     const next = [...history];
@@ -504,6 +554,46 @@ function FunStats({ fun }) {
       value: fun.biggestField ? `${fun.biggestField.entryCount} entries` : '—',
       sub: fun.biggestField?.major || '',
     },
+    {
+      label: 'Toughest test',
+      value: fun.toughestTest ? `${fun.toughestTest.points >= 0 ? '+' : ''}${fun.toughestTest.points} pts` : '—',
+      sub: fun.toughestTest ? `Lowest winning score · ${fun.toughestTest.who} · ${fun.toughestTest.major}` : '',
+    },
+    {
+      label: 'Nail-biter',
+      value: fun.nailBiter ? `${fun.nailBiter.margin} pt${fun.nailBiter.margin === 1 ? '' : 's'}` : '—',
+      sub: fun.nailBiter ? `Closest margin · ${fun.nailBiter.winner} · ${fun.nailBiter.major}` : 'Not enough data yet',
+    },
+    {
+      label: 'Runaway winner',
+      value: fun.runaway ? `${fun.runaway.margin} pts` : '—',
+      sub: fun.runaway ? `Biggest margin · ${fun.runaway.winner} · ${fun.runaway.major}` : 'Not enough data yet',
+    },
+    {
+      label: 'Longest shot picked',
+      value: fun.longestShot ? fun.longestShot.name : '—',
+      sub: fun.longestShot ? `${fun.longestShot.odds} odds — somebody believed` : 'Not enough data yet',
+    },
+    {
+      label: 'Backed into it',
+      value: fun.cheapestCash != null ? `${fun.cheapestCash.points >= 0 ? '+' : ''}${fun.cheapestCash.points} pts` : '—',
+      sub: fun.cheapestCash ? `Lowest score to still cash · ${fun.cheapestCash.who} · ${fm(fun.cheapestCash.payout)}` : 'Not enough data yet',
+    },
+    {
+      label: 'Most loyal, still ringless',
+      value: fun.mostLoyal ? `${fun.mostLoyal.entries} entries` : '—',
+      sub: fun.mostLoyal ? `${fun.mostLoyal.name} · 0 wins so far` : 'Not enough data yet',
+    },
+    {
+      label: 'Total paid out',
+      value: fm(fun.totalPaidOut),
+      sub: 'Every dollar we know changed hands, all-time',
+    },
+    {
+      label: 'Total picks logged',
+      value: `${fun.totalPicksLogged.toLocaleString()} picks`,
+      sub: 'Across every full-data major',
+    },
   ];
 
   return (
@@ -517,6 +607,12 @@ function FunStats({ fun }) {
       ))}
     </div>
   );
+}
+
+function oddsToNum(odds) {
+  if (!odds) return -1;
+  const n = parseInt(String(odds).replace(/[+]/, ''), 10);
+  return Number.isFinite(n) ? n : -1;
 }
 
 function fmtDate(s) {
