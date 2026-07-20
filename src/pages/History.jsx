@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { storage, keys, listTournaments } from '../lib/storage.js';
-import { buildMajors } from '../lib/majors.js';
+import { buildMajors, getStrokerWins, trophyCaseEmojis } from '../lib/majors.js';
 import { fmtMoney as fm } from '../lib/payouts.js';
 import { fmtDate } from '../lib/format.js';
 import { oddsToNum } from '../lib/odds.js';
-import { Card, Button, Input, Select, Pill, TierDot, confirmAsync, alertAsync } from '../components/ui.jsx';
+import { Card, Button, Input, Select, Pill, TierDot, confirmAsync, alertAsync, TrophyCase, TrophyCaseModal } from '../components/ui.jsx';
 import { EVENT_TYPES, eventTypeLabel, autoTournamentName } from '../lib/eventTypes.js';
 
 const TABS = [
@@ -20,6 +20,9 @@ export default function History({ session, refreshAll }) {
   const [gSort, setGSort] = useState({ key: 'moneyWon', dir: -1 });
   const [expandedId, setExpandedId] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [trophyFor, setTrophyFor] = useState(null);
+
+  const strokerWins = getStrokerWins(); // cheap; always fresh (unaffected by History's own filters — a trophy case is a fixed fact)
   const [eventTypeFilter, setEventTypeFilter] = useState('all');
   const [yearFilter, setYearFilter] = useState('all');
 
@@ -369,7 +372,7 @@ export default function History({ session, refreshAll }) {
 
       {tab === 'strokers' && (
         <div className="space-y-2">
-          <StrokerTable rows={sortedStrokers} sort={gSort} onSort={toggleGSort} />
+          <StrokerTable rows={sortedStrokers} sort={gSort} onSort={toggleGSort} strokerWins={strokerWins} onOpenTrophy={setTrophyFor} />
           <p className="text-xs text-muted">
             $ Won includes paid finishes that weren't wins (e.g. a 2nd place that cashed a payout).
             Entries / $ Spent / ROI / Paid-no-win only reflect majors with full data. ROI is net return —
@@ -393,6 +396,9 @@ export default function History({ session, refreshAll }) {
       {tab === 'fun' && <FunStats fun={fun} />}
 
       {editing && <EditModal record={editing} onSave={save} onCancel={() => setEditing(null)} />}
+      {trophyFor && (
+        <TrophyCaseModal name={trophyFor} wins={strokerWins.get(trophyFor) || []} onClose={() => setTrophyFor(null)} />
+      )}
     </div>
   );
 }
@@ -450,7 +456,7 @@ function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
   );
 }
 
-function StrokerTable({ rows, sort, onSort }) {
+function StrokerTable({ rows, sort, onSort, strokerWins, onOpenTrophy }) {
   const cols = [
     { key: 'name', label: 'Stroker', left: true },
     { key: 'wins', label: 'Wins' },
@@ -479,8 +485,15 @@ function StrokerTable({ rows, sort, onSort }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.name} className="border-t border-border">
-              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 whitespace-nowrap">{r.name}</td>
-              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums">{r.wins}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 whitespace-nowrap">
+                <div>{r.name}</div>
+                <TrophyCase emojis={trophyCaseEmojis(strokerWins.get(r.name))} onClick={() => onOpenTrophy(r.name)} />
+              </td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums">
+                {r.wins > 0 ? (
+                  <TrophyCase emojis={String(r.wins)} onClick={() => onOpenTrophy(r.name)} />
+                ) : r.wins}
+              </td>
               <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-warn">{r.podiumOnly ?? '—'}</td>
               <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-accent whitespace-nowrap">{fm(r.moneyWon)}</td>
               <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.entries ?? '—'}</td>

@@ -2,10 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { storage, keys } from '../lib/storage.js';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
-import { buildMajors, getDefendingChampions, getMostDecorated, getLongestStreaks, getGrandSlamProgress } from '../lib/majors.js';
+import { buildMajors, getDefendingChampions, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, trophyCaseEmojis } from '../lib/majors.js';
 import { eventTypeLabel } from '../lib/eventTypes.js';
 import { fmtDate } from '../lib/format.js';
-import { Card, Stat, Button } from '../components/ui.jsx';
+import { Card, Stat, Button, TrophyCase, TrophyCaseModal } from '../components/ui.jsx';
 
 export default function Home({ tournament, golfers, entries, session, onNav }) {
   const nextMajor = storage.get(keys.nextMajor);
@@ -38,6 +38,9 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
     (r) => r.name.toLowerCase() === (session?.name || '').toLowerCase()
   ) || { count: 0, pct: 0 };
   const hasRecords = !!(mostDecorated || streaks.overall || streaks.sameEvent || grandSlam.leaders.length);
+
+  const strokerWins = getStrokerWins(); // cheap; always fresh
+  const [trophyFor, setTrophyFor] = useState(null);
 
   let ranked = [], structure = null, leader = null, myEntries = [];
   if (tournament) {
@@ -150,8 +153,13 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
               <Card className="p-4">
                 <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Most decorated</div>
                 <div className="text-lg font-semibold">{mostDecorated.names.join(' & ')}</div>
-                <div className="text-xs text-muted mt-0.5">
-                  {mostDecorated.wins} win{mostDecorated.wins === 1 ? '' : 's'}
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-muted">
+                    {mostDecorated.wins} win{mostDecorated.wins === 1 ? '' : 's'}
+                  </span>
+                  {mostDecorated.names.map((n) => (
+                    <TrophyCase key={n} emojis={trophyCaseEmojis(strokerWins.get(n))} onClick={() => setTrophyFor(n)} />
+                  ))}
                 </div>
               </Card>
             )}
@@ -188,6 +196,10 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
             )}
           </div>
         </div>
+      )}
+
+      {trophyFor && (
+        <TrophyCaseModal name={trophyFor} wins={strokerWins.get(trophyFor) || []} onClose={() => setTrophyFor(null)} />
       )}
     </div>
   );

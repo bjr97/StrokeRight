@@ -1,6 +1,7 @@
 import { storage, keys, listTournaments } from './storage.js';
 import { finalStandings } from './scoring.js';
 import { oddsToNum } from './odds.js';
+import { eventTypeEmoji } from './eventTypes.js';
 
 const LONGSHOT_THRESHOLD = 3000; // +3000 or longer odds counts as a notable pick
 const NAIL_BITER_MARGIN = 3;     // won by this many points or fewer
@@ -227,4 +228,40 @@ export function getGrandSlamProgress(majors) {
   const max = all[0].count;
   const leaders = all.filter((r) => r.count === max);
   return { leaders, all };
+}
+
+// Every major each stroker has won, all-time, one entry per win (a tie
+// counts as a full win for each co-winner). Sorted newest-first. Always
+// computed from the full unfiltered majors list — a stroker's trophy case
+// is a fixed fact about them, not something that should shrink because the
+// person looking at it happens to have a History filter active.
+export function getStrokerWins() {
+  const wins = new Map(); // name -> [{ major, date, eventType }]
+  const sorted = buildMajors()
+    .filter((m) => m.date && m.winner)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  for (const m of sorted) {
+    const winners = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
+    for (const w of winners) {
+      const list = wins.get(w) || [];
+      list.push({ major: m.name, date: m.date, eventType: m.eventType });
+      wins.set(w, list);
+    }
+  }
+  return wins;
+}
+
+// Fixed display order so the emoji string reads the same for everyone
+// regardless of the order they actually won things in.
+const TROPHY_ORDER = ['masters', 'pga', 'us_open', 'open', 'wm_open'];
+
+/** Builds the repeated-emoji trophy-case string from a stroker's win list. */
+export function trophyCaseEmojis(winList) {
+  const counts = new Map();
+  for (const w of winList || []) counts.set(w.eventType, (counts.get(w.eventType) || 0) + 1);
+  let out = '';
+  for (const type of TROPHY_ORDER) {
+    out += eventTypeEmoji(type).repeat(counts.get(type) || 0);
+  }
+  return out;
 }

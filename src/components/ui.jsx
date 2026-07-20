@@ -1,5 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { eventTypeEmoji } from '../lib/eventTypes.js';
 
 export const TIER_COLORS = {
   1: { bg: 'bg-tier-1/10', border: 'border-tier-1/40', dot: 'bg-tier-1', text: 'text-tier-1' },
@@ -186,4 +187,52 @@ export function alertAsync(message) {
       <AlertDialog message={message} onClose={() => { unmount(); resolve(); }} />
     );
   });
+}
+
+// ─── Trophy case (major-win emoji summary + detail popup) ─────────────────
+
+/** Clickable emoji string (from lib/majors.js's trophyCaseEmojis). Renders
+ * nothing if there are no wins to show, so callers can use it unconditionally. */
+export function TrophyCase({ emojis, onClick }) {
+  if (!emojis) return null;
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onClick?.(); } }}
+      className="text-sm leading-none hover:opacity-70 transition cursor-pointer inline-block"
+      title="View win history"
+    >
+      {emojis}
+    </span>
+  );
+}
+
+export function TrophyCaseModal({ name, wins, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div
+        className="bg-card border border-border rounded-xl w-full max-w-sm p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-medium">{name}'s trophy case</div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        {!wins?.length ? (
+          <div className="text-sm text-muted">No major wins yet.</div>
+        ) : (
+          <div className="space-y-2">
+            {wins.map((w, i) => (
+              <div key={i} className="flex items-center gap-2 text-sm">
+                <span>{eventTypeEmoji(w.eventType) || '🏅'}</span>
+                <span className="text-text">{w.major}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

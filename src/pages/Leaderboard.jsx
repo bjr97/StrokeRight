@@ -2,9 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
 import { computeWinProbabilities } from '../lib/winProb.js';
-import { getDefendingChampions } from '../lib/majors.js';
+import { getDefendingChampions, getStrokerWins, trophyCaseEmojis } from '../lib/majors.js';
 import { picksRevealed, deadlineLabel } from '../lib/gating.js';
-import { Card, Stat, Pill, StatusBadge, TierDot, fmtToPar, Input } from '../components/ui.jsx';
+import { Card, Stat, Pill, StatusBadge, TierDot, fmtToPar, Input, TrophyCase, TrophyCaseModal } from '../components/ui.jsx';
 
 // Human-readable labels for each breakdown line item.
 // Only non-zero entries are shown in the popup.
@@ -69,6 +69,9 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState(null);
   const [breakdownFor, setBreakdownFor] = useState(null); // { golfer, points, breakdown }
+  const [trophyFor, setTrophyFor] = useState(null); // stroker name, or null
+
+  const strokerWins = getStrokerWins(); // cheap; always fresh, no stale-memo risk
 
   const revealed = picksRevealed(tournament, session);
 
@@ -160,6 +163,10 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
                       {revealed && change > 0 && <span className="text-xs text-accent">↑{change}</span>}
                       {revealed && change < 0 && <span className="text-xs text-danger">↓{-change}</span>}
                     </div>
+                    <TrophyCase
+                      emojis={trophyCaseEmojis(strokerWins.get(row.entry.name))}
+                      onClick={() => setTrophyFor(row.entry.name)}
+                    />
                     {revealed && payout > 0 && (
                       <div className="text-xs text-accent">{fmtMoney(payout)} projected</div>
                     )}
@@ -214,6 +221,9 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
       </div>
 
       <ScoreBreakdownModal scored={breakdownFor} onClose={() => setBreakdownFor(null)} />
+      {trophyFor && (
+        <TrophyCaseModal name={trophyFor} wins={strokerWins.get(trophyFor) || []} onClose={() => setTrophyFor(null)} />
+      )}
     </div>
   );
 }

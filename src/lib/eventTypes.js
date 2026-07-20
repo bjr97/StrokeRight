@@ -13,6 +13,21 @@ export function eventTypeLabel(value) {
   return EVENT_TYPE_LABEL[value] || EVENT_TYPE_LABEL.other;
 }
 
+// No true "green jacket" emoji exists in Unicode — 🧥 (coat) is the closest
+// real stand-in and is what people commonly use for it. WM Open uses 🗑️,
+// leaning into the event's own "trash can" reputation, not a real trophy.
+export const EVENT_TYPE_EMOJI = {
+  masters: '🧥',
+  us_open: '🇺🇸',
+  pga: '🏌️',
+  open: '🏆',
+  wm_open: '🗑️',
+};
+
+export function eventTypeEmoji(value) {
+  return EVENT_TYPE_EMOJI[value] || '';
+}
+
 // Naming template per type -- deliberately distinct from the dropdown label
 // above (e.g. "Masters" here vs "The Masters" in the picker), to match the
 // naming convention already used throughout the app's existing data ("2025
