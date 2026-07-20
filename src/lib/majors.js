@@ -124,3 +124,107 @@ function computeHighlight(m, tGolfers) {
 
   return null;
 }
+
+// ─── Homepage "pool records" ────────────────────────────────────────────
+
+/** Stroker(s) with the most all-time wins, across every major (any type). */
+export function getMostDecorated(majors) {
+  const wins = new Map();
+  for (const m of majors) {
+    const winners = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
+    for (const w of winners) wins.set(w, (wins.get(w) || 0) + 1);
+  }
+  if (!wins.size) return null;
+  const max = Math.max(...wins.values());
+  if (max <= 0) return null;
+  const names = [...wins.entries()].filter(([, c]) => c === max).map(([n]) => n);
+  return { names, wins: max };
+}
+
+// Walks a chronologically-sorted list of majors and finds, per stroker, the
+// longest run of CONSECUTIVE majors (within that list) they won. A tied win
+// counts as a win for everyone in the tie, so a co-championship extends
+// everyone's streak, not just one person's.
+function longestConsecutiveWinStreak(sortedMajors) {
+  const current = new Map(); // name -> running streak length
+  const best = new Map();    // name -> best streak length seen
+  for (const m of sortedMajors) {
+    const winners = new Set((m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean));
+    for (const name of new Set([...current.keys(), ...winners])) {
+      if (winners.has(name)) {
+        const next = (current.get(name) || 0) + 1;
+        current.set(name, next);
+        if (next > (best.get(name) || 0)) best.set(name, next);
+      } else {
+        current.set(name, 0);
+      }
+    }
+  }
+  if (!best.size) return null;
+  const max = Math.max(...best.values());
+  if (max < 2) return null; // a "streak" of 1 isn't a streak
+  const names = [...best.entries()].filter(([, c]) => c === max).map(([n]) => n);
+  return { names, length: max };
+}
+
+/**
+ * Longest win streaks, computed two ways since "streak" is genuinely
+ * ambiguous:
+ *   - overall: consecutive majors won back-to-back, any event type,
+ *     in chronological order.
+ *   - sameEvent: consecutive editions of the SAME event type won in a row
+ *     (e.g. 3 Masters in a row) — the best such streak found across all
+ *     event types (excluding 'other', which has no coherent identity).
+ * Either can be null if nothing qualifies (need at least a streak of 2).
+ */
+export function getLongestStreaks(majors) {
+  const withDates = majors.filter((m) => m.date && m.winner);
+
+  const overallSorted = [...withDates].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const overall = longestConsecutiveWinStreak(overallSorted);
+
+  let sameEvent = null;
+  const types = new Set(withDates.map((m) => m.eventType).filter((t) => t && t !== 'other'));
+  for (const type of types) {
+    const typeSorted = withDates
+      .filter((m) => m.eventType === type)
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+    const result = longestConsecutiveWinStreak(typeSorted);
+    if (result && (!sameEvent || result.length > sameEvent.length)) {
+      sameEvent = { ...result, eventType: type };
+    }
+  }
+
+  return { overall, sameEvent };
+}
+
+const GRAND_SLAM_TYPES = ['masters', 'us_open', 'pga', 'open'];
+
+/**
+ * Career grand-slam progress: how many of the 4 real majors (Masters, US
+ * Open, PGA, Open — WM Open and Other don't count) each stroker has won at
+ * least once, ever. Returns every stroker with at least one grand-slam-type
+ * win (sorted by count desc) plus the leader(s) at the max count.
+ */
+export function getGrandSlamProgress(majors) {
+  const wonTypes = new Map(); // name -> Set of eventTypes won
+
+  for (const m of majors) {
+    if (!GRAND_SLAM_TYPES.includes(m.eventType)) continue;
+    const winners = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
+    for (const w of winners) {
+      const set = wonTypes.get(w) || new Set();
+      set.add(m.eventType);
+      wonTypes.set(w, set);
+    }
+  }
+
+  const all = [...wonTypes.entries()]
+    .map(([name, set]) => ({ name, count: set.size, pct: Math.round((set.size / GRAND_SLAM_TYPES.length) * 100) }))
+    .sort((a, b) => b.count - a.count);
+
+  if (!all.length) return { leaders: [], all };
+  const max = all[0].count;
+  const leaders = all.filter((r) => r.count === max);
+  return { leaders, all };
+}

@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { storage, keys } from '../lib/storage.js';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
-import { buildMajors, getDefendingChampions } from '../lib/majors.js';
+import { buildMajors, getDefendingChampions, getMostDecorated, getLongestStreaks, getGrandSlamProgress } from '../lib/majors.js';
+import { eventTypeLabel } from '../lib/eventTypes.js';
 import { fmtDate } from '../lib/format.js';
 import { Card, Stat, Button } from '../components/ui.jsx';
 
@@ -29,6 +30,14 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
     () => getDefendingChampions({ eventType: countdownEventType, anchorDate: countdownAnchorDate }),
     [countdownEventType, countdownAnchorDate, majors]
   );
+
+  const mostDecorated = useMemo(() => getMostDecorated(majors), [majors]);
+  const streaks = useMemo(() => getLongestStreaks(majors), [majors]);
+  const grandSlam = useMemo(() => getGrandSlamProgress(majors), [majors]);
+  const myGrandSlam = grandSlam.all.find(
+    (r) => r.name.toLowerCase() === (session?.name || '').toLowerCase()
+  ) || { count: 0, pct: 0 };
+  const hasRecords = !!(mostDecorated || streaks.overall || streaks.sameEvent || grandSlam.leaders.length);
 
   let ranked = [], structure = null, leader = null, myEntries = [];
   if (tournament) {
@@ -129,6 +138,54 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
           <div className="text-xs text-muted uppercase tracking-wide mb-2">Recent majors</div>
           <div className="grid gap-2 sm:grid-cols-2">
             {recentMajors.map((m) => <RecentMajorCard key={m.id} m={m} />)}
+          </div>
+        </div>
+      )}
+
+      {hasRecords && (
+        <div>
+          <div className="text-xs text-muted uppercase tracking-wide mb-2">Pool records</div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {mostDecorated && (
+              <Card className="p-4">
+                <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Most decorated</div>
+                <div className="text-lg font-semibold">{mostDecorated.names.join(' & ')}</div>
+                <div className="text-xs text-muted mt-0.5">
+                  {mostDecorated.wins} win{mostDecorated.wins === 1 ? '' : 's'}
+                </div>
+              </Card>
+            )}
+
+            {(streaks.overall || streaks.sameEvent) && (
+              <Card className="p-4">
+                <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Longest streak</div>
+                {streaks.overall && (
+                  <div className="text-sm">
+                    <span className="font-semibold">{streaks.overall.names.join(' & ')}</span>
+                    <span className="text-muted"> — {streaks.overall.length} majors in a row</span>
+                  </div>
+                )}
+                {streaks.sameEvent && (
+                  <div className={`text-sm ${streaks.overall ? 'mt-1' : ''}`}>
+                    <span className="font-semibold">{streaks.sameEvent.names.join(' & ')}</span>
+                    <span className="text-muted"> — {streaks.sameEvent.length} straight {eventTypeLabel(streaks.sameEvent.eventType)}</span>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {grandSlam.leaders.length > 0 && (
+              <Card className="p-4">
+                <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Grand slam chase</div>
+                <div className="text-lg font-semibold">{grandSlam.leaders.map((l) => l.name).join(' & ')}</div>
+                <div className="text-xs text-muted mt-0.5">
+                  {grandSlam.leaders[0].count}/4 majors ({grandSlam.leaders[0].pct}%)
+                </div>
+                <div className="text-xs text-muted mt-1">
+                  Your progress: {myGrandSlam.count}/4 ({myGrandSlam.pct}%)
+                </div>
+              </Card>
+            )}
           </div>
         </div>
       )}
