@@ -115,7 +115,7 @@ export default function History({ session, refreshAll }) {
       if (!major) continue;
 
       for (const e of tEntries) {
-        const rec = full.get(e.name) || { entries: 0, feesPaid: 0, winsFull: 0, podiumOnly: 0, moneyFull: 0 };
+        const rec = full.get(e.name) || { entries: 0, feesPaid: 0, winsFull: 0, podiumOnly: 0, moneyFull: 0, oddsSum: 0, oddsCount: 0 };
         rec.entries += 1;
         rec.feesPaid += t.entryFee || 0;
         full.set(e.name, rec);
@@ -130,6 +130,10 @@ export default function History({ session, refreshAll }) {
           const oddsNum = oddsToNum(g.odds);
           if (oddsNum >= 0 && (!longestShot || oddsNum > longestShot.oddsNum)) {
             longestShot = { name: g.name, odds: g.odds, oddsNum };
+          }
+          if (oddsNum >= 0) {
+            rec.oddsSum += oddsNum;
+            rec.oddsCount += 1;
           }
         }
       }
@@ -153,6 +157,7 @@ export default function History({ session, refreshAll }) {
       const f = full.get(name);
       // ROI = (gain - cost) / cost — net return, not the raw payout multiple.
       const roi = f && f.feesPaid > 0 ? (f.moneyFull - f.feesPaid) / f.feesPaid : null;
+      const avgPickOdds = f && f.oddsCount > 0 ? f.oddsSum / f.oddsCount : null;
       return {
         name,
         wins: l.wins + (f?.winsFull || 0),
@@ -161,6 +166,7 @@ export default function History({ session, refreshAll }) {
         entries: f ? f.entries : null,
         feesPaid: f ? f.feesPaid : null,
         roi,
+        avgPickOdds,
       };
     });
 
@@ -257,10 +263,19 @@ export default function History({ session, refreshAll }) {
       }
     }
 
+    // All-time picking style: average odds (American, numeric) across every
+    // golfer a stroker has ever drafted in full-data majors. Lowest average
+    // = "chalk" (favorite-heavy), highest = "contrarian" (longshot-heavy).
+    const withOdds = strokerRows.filter((r) => r.avgPickOdds != null);
+    const minAvgOdds = withOdds.length ? Math.min(...withOdds.map((r) => r.avgPickOdds)) : null;
+    const maxAvgOdds = withOdds.length ? Math.max(...withOdds.map((r) => r.avgPickOdds)) : null;
+    const mrChalk = minAvgOdds != null ? withOdds.filter((r) => r.avgPickOdds === minAvgOdds) : [];
+    const mrContrarian = maxAvgOdds != null ? withOdds.filter((r) => r.avgPickOdds === maxAvgOdds) : [];
+
     return {
       mostWins, topWins, biggestPrize, highestScore, biggestField, bestRoi, ironMan, topGolfer,
       bridesmaid, topPodiumOnly, toughestTest, totalPaidOut, mostLoyal, nailBiter, runaway,
-      cheapestCash, longestShot, totalPicksLogged,
+      cheapestCash, longestShot, totalPicksLogged, mrChalk, mrContrarian, minAvgOdds, maxAvgOdds,
     };
   }, [majors, strokerRows, golferRows, longestShot, totalPicksLogged]);
 
@@ -593,6 +608,16 @@ function FunStats({ fun }) {
       label: 'Total picks logged',
       value: `${fun.totalPicksLogged.toLocaleString()} picks`,
       sub: 'Across every full-data major',
+    },
+    {
+      label: 'Mr. Chalk (all-time)',
+      value: fun.mrChalk.length ? fun.mrChalk.map((r) => r.name).join(' & ') : '—',
+      sub: fun.minAvgOdds != null ? `Avg pick odds +${Math.round(fun.minAvgOdds).toLocaleString()} — plays it safe` : 'Not enough data yet',
+    },
+    {
+      label: 'Mr. Contrarian (all-time)',
+      value: fun.mrContrarian.length ? fun.mrContrarian.map((r) => r.name).join(' & ') : '—',
+      sub: fun.maxAvgOdds != null ? `Avg pick odds +${Math.round(fun.maxAvgOdds).toLocaleString()} — swings for the fences` : 'Not enough data yet',
     },
   ];
 
