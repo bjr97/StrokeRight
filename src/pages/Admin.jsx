@@ -4,7 +4,7 @@ import { seedDemoMasters } from '../lib/seedData.js';
 import { finalStandings } from '../lib/scoring.js';
 import { fmtMoney } from '../lib/payouts.js';
 import { Card, Button, Input, Select, Pill, TierDot, TIER_COLORS, fmtToPar, confirmAsync, alertAsync } from '../components/ui.jsx';
-import { EVENT_TYPES, autoTournamentName } from '../lib/eventTypes.js';
+import { EVENT_TYPES, autoTournamentName, fixedCourse } from '../lib/eventTypes.js';
 import { autoTierByOdds } from '../lib/tiering.js';
 
 // Event types with a live odds feed available (The Odds API free tier only
@@ -83,6 +83,7 @@ function CreateTournament({ refreshAll }) {
   const nameLocked = form.eventType !== 'other';
   const computedName = autoTournamentName(form.eventType, form.startDate);
   const computedDeadline = computeDeadline(form.startDate);
+  const courseLocked = fixedCourse(form.eventType);
 
   async function save() {
     if (nameLocked && !computedName) {
@@ -95,7 +96,7 @@ function CreateTournament({ refreshAll }) {
     const t = {
       id,
       name,
-      course: form.course,
+      course: courseLocked || form.course,
       startDate: form.startDate,
       deadline: computedDeadline,
       poolCode: form.poolCode,
@@ -134,7 +135,13 @@ function CreateTournament({ refreshAll }) {
           <Input value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="e.g. 2026 Member-Guest Classic" />
         )}
       </Field>
-      <Field label="Course"><Input value={form.course} onChange={(v) => setForm({ ...form, course: v })} placeholder="Quail Hollow" /></Field>
+      <Field label="Course">
+        {courseLocked ? (
+          <div className="px-3 py-2 bg-bg border border-border rounded-lg text-sm">{courseLocked}</div>
+        ) : (
+          <Input value={form.course} onChange={(v) => setForm({ ...form, course: v })} placeholder="Quail Hollow" />
+        )}
+      </Field>
       <Field label="Pool code (share with participants)"><Input value={form.poolCode} onChange={(v) => setForm({ ...form, poolCode: v })} placeholder="masters26" /></Field>
       <Button onClick={save}>Create tournament</Button>
     </Card>

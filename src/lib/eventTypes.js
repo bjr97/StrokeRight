@@ -56,3 +56,16 @@ export function autoTournamentName(eventType, dateStr) {
   if (!template) return null;
   return `${year} ${template}`;
 }
+
+// These 3 events are always played at the same course every year (unlike
+// the US Open / PGA Championship / Open Championship, which rotate venues),
+// so the course can be locked in the same way the tournament name is.
+export const FIXED_COURSES = {
+  wm_open: 'TPC Scottsdale',
+  players: 'TPC Sawgrass',
+  masters: 'Augusta National',
+};
+
+export function fixedCourse(eventType) {
+  return FIXED_COURSES[eventType] || null;
+}
