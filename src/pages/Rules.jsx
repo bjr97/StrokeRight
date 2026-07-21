@@ -34,7 +34,7 @@ export default function Rules() {
       </Section>
 
       <Section title="2. Made-cut bonus">
-        <p>A golfer who officially makes the cut earns a flat <span className="text-accent">+3</span>, separate from their stroke score. This magnitude is configurable per tournament (Admin → Live controls) — <span className="text-text">2024 majors used ±2</span> instead of ±3 for this and the two rules below.</p>
+        <p>A golfer who officially makes the cut earns a flat <span className="text-accent">+3</span>, separate from their stroke score. <span className="text-text">2024 majors used ±2</span> instead of ±3 for this and the rule below.**</p>
       </Section>
 
       <Section title="3. Missed-cut penalty">
@@ -84,6 +84,10 @@ export default function Rules() {
       <Section title="Entry & leaderboard totals">
         <p>An entry's total score is the sum of all 6 golfers' points. Entries are ranked by total points, descending, with ties sharing the same rank (standard golf-style tie handling — if two entries tie for 2nd, both show rank 2, and the next entry jumps to rank 4).</p>
       </Section>
+
+      <p className="text-xs text-muted px-1">
+        ** Starting with the <span className="text-text">2025 Open Championship</span> (July 17, 2025), the made-cut bonus / missed-cut penalty magnitude changed from ±2 to ±3, and the tiered cut-line penalty (rules 7–8) was introduced. Both apply to every major from that point forward, including all 2026 majors. Separately, entry fees changed from $10 to $20 starting with the <span className="text-text">2026 Open Championship</span> (July 16, 2026).
+      </p>
     </div>
   );
 }
