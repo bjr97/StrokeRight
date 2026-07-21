@@ -145,7 +145,7 @@ function formatDeadlinePreview(deadline) {
 
 function CreateTournament({ refreshAll, onDone }) {
   const [form, setForm] = useState({
-    name: '', startDate: '', poolCode: '', course: '', eventType: 'other',
+    name: '', startDate: '', poolCode: '', course: '', eventType: 'other', tieredPenaltyEnabled: true,
   });
   // Once the tournament record exists, step 2 reuses TierManager against it
   // directly — the field import is skippable (you can always add it later
@@ -174,7 +174,7 @@ function CreateTournament({ refreshAll, onDone }) {
       deadline: computedDeadline,
       poolCode: form.poolCode,
       entryFee: 10,
-      tieredPenaltyEnabled: false,
+      tieredPenaltyEnabled: form.tieredPenaltyEnabled,
       cutLine: null,
       currentRound: 1,
       status: 'setup',
@@ -232,6 +232,15 @@ function CreateTournament({ refreshAll, onDone }) {
         )}
       </Field>
       <Field label="Pool code (share with participants)"><Input value={form.poolCode} onChange={(v) => setForm({ ...form, poolCode: v })} placeholder="masters26" /></Field>
+      <Field label="Tiered cut-line penalty (Rules 7–8)">
+        <button
+          type="button"
+          onClick={() => setForm({ ...form, tieredPenaltyEnabled: !form.tieredPenaltyEnabled })}
+          className={`px-3 py-1.5 rounded-lg text-sm ${form.tieredPenaltyEnabled ? 'bg-accent text-bg' : 'bg-border text-muted'}`}
+        >
+          {form.tieredPenaltyEnabled ? 'On' : 'Off'}
+        </button>
+      </Field>
       <Button onClick={save}>Create tournament — continue to tiers</Button>
     </Card>
   );
