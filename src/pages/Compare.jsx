@@ -20,6 +20,7 @@ export default function Compare({ tournament, golfers, entries, session }) {
   const ranked = useMemo(() => rankEntries(entries, golfers, {
     tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
     cutLine: tournament.cutLine,
+    cutBonusPoints: tournament.cutBonusPoints,
     currentRound: tournament.currentRound,
   }), [entries, golfers, tournament]);
 

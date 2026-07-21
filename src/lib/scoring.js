@@ -8,11 +8,11 @@ import { computePayouts } from './payouts.js';
 /**
  * Score a single golfer for a given entry.
  * @param {object} golfer - { strokesToPar, status, won, withdrawnAfterCut }
- * @param {object} opts   - { tieredPenaltyEnabled, cutLine, currentRound }
+ * @param {object} opts   - { tieredPenaltyEnabled, cutLine, currentRound, cutBonusPoints }
  * @returns {{ points: number, breakdown: object }}
  */
 export function scoreGolfer(golfer, opts = {}) {
-  const { tieredPenaltyEnabled = false, cutLine = null, currentRound = 1 } = opts;
+  const { tieredPenaltyEnabled = false, cutLine = null, currentRound = 1, cutBonusPoints = 3 } = opts;
   const breakdown = {
     strokesUnderPar: 0,
     cutBonus: 0,
@@ -22,10 +22,11 @@ export function scoreGolfer(golfer, opts = {}) {
     tieredPenalty: 0,
   };
 
-  // Rule 4: WD before end of R2 → -3 (no other points)
+  // Rule 4: WD before end of R2 → same magnitude as the missed-cut penalty (no other points).
+  // (2024 majors scored make/miss cut at ±2 instead of ±3 — see tournament.cutBonusPoints.)
   if (golfer.status === 'withdrawn' && !golfer.withdrawnAfterCut) {
-    breakdown.wdPenalty = -3;
-    return { points: -3, breakdown };
+    breakdown.wdPenalty = -cutBonusPoints;
+    return { points: -cutBonusPoints, breakdown };
   }
 
   // Rule 5: WD after start of R3 (had made cut) → 0
@@ -33,10 +34,10 @@ export function scoreGolfer(golfer, opts = {}) {
     return { points: 0, breakdown };
   }
 
-  // Rule 3: missed cut → -3 (no per-stroke math)
+  // Rule 3: missed cut → -cutBonusPoints (no per-stroke math)
   if (golfer.status === 'missed_cut') {
-    breakdown.cutPenalty = -3;
-    return { points: -3, breakdown };
+    breakdown.cutPenalty = -cutBonusPoints;
+    return { points: -cutBonusPoints, breakdown };
   }
 
   // Rule 1: +1 per stroke under par (strokesToPar is negative if under)
@@ -47,11 +48,11 @@ export function scoreGolfer(golfer, opts = {}) {
   // For over-par strokes, no negative — handled via tiered penalty if enabled.
   // (Spec example confirms this.)
 
-  // Rule 2: made cut → +3
+  // Rule 2: made cut → +cutBonusPoints
   if (golfer.status === 'made_cut' || golfer.status === 'playing') {
     // Bonus applies once they've made the cut. We treat 'playing' as not-yet-cut pre-R2;
     // most calls happen post-cut so this is fine.
-    breakdown.cutBonus = golfer.status === 'made_cut' ? 3 : 0;
+    breakdown.cutBonus = golfer.status === 'made_cut' ? cutBonusPoints : 0;
   }
 
   // Rule 6: winner bonus
@@ -137,6 +138,7 @@ export function finalStandings(tournament, golfers, entries) {
     tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
     cutLine: tournament.cutLine,
     currentRound: tournament.currentRound,
+    cutBonusPoints: tournament.cutBonusPoints,
   });
   const { payouts } = computePayouts(ranked, entries.length, tournament.entryFee);
 

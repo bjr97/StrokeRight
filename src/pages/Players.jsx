@@ -11,6 +11,7 @@ export default function Players({ tournament, golfers, entries, onNavToLeaderboa
   const opts = {
     tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
     cutLine: tournament.cutLine,
+    cutBonusPoints: tournament.cutBonusPoints,
     currentRound: tournament.currentRound,
   };
 

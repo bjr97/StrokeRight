@@ -10,6 +10,7 @@ export default function Trends({ tournament, golfers, entries, snapshots, sessio
   const ranked = useMemo(() => rankEntries(entries, golfers, {
     tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
     cutLine: tournament.cutLine,
+    cutBonusPoints: tournament.cutBonusPoints,
     currentRound: tournament.currentRound,
   }), [entries, golfers, tournament]);
 

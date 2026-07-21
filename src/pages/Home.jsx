@@ -50,6 +50,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
     ranked = rankEntries(entries, golfers, {
       tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
       cutLine: tournament.cutLine,
+      cutBonusPoints: tournament.cutBonusPoints,
       currentRound: tournament.currentRound,
     });
     structure = computePayouts(ranked, entries.length, tournament.entryFee).structure;

@@ -313,6 +313,7 @@ function TierManager({ tournament, golfers, refreshAll }) {
 function LiveControls({ tournament, golfers, refreshAll }) {
   const [round, setRound] = useState(tournament.currentRound);
   const [cutLine, setCutLine] = useState(tournament.cutLine ?? '');
+  const [cutBonusPoints, setCutBonusPoints] = useState(tournament.cutBonusPoints ?? 3);
   const entries = storage.get(keys.entries(tournament.id)) || [];
 
   // These start from the tournament prop but only capture it once (useState
@@ -324,7 +325,8 @@ function LiveControls({ tournament, golfers, refreshAll }) {
   useEffect(() => {
     setRound(tournament.currentRound);
     setCutLine(tournament.cutLine ?? '');
-  }, [tournament.id, tournament.currentRound, tournament.cutLine]);
+    setCutBonusPoints(tournament.cutBonusPoints ?? 3);
+  }, [tournament.id, tournament.currentRound, tournament.cutLine, tournament.cutBonusPoints]);
 
   async function completeTournament() {
     if (!entries.length) return alertAsync('No entries yet — nothing to finalize.');
@@ -379,7 +381,12 @@ function LiveControls({ tournament, golfers, refreshAll }) {
   }
 
   function save() {
-    storage.set(keys.tournament(tournament.id), { ...tournament, currentRound: Number(round), cutLine: cutLine === '' ? null : Number(cutLine) });
+    storage.set(keys.tournament(tournament.id), {
+      ...tournament,
+      currentRound: Number(round),
+      cutLine: cutLine === '' ? null : Number(cutLine),
+      cutBonusPoints: cutBonusPoints === '' ? 3 : Number(cutBonusPoints),
+    });
     refreshAll();
   }
 
@@ -427,6 +434,9 @@ function LiveControls({ tournament, golfers, refreshAll }) {
       <Card className="p-4 space-y-3">
         <Field label="Current round (1–4)"><Input type="number" value={round} onChange={setRound} /></Field>
         <Field label="Cut line (over par). Leave blank to auto-detect."><Input type="number" value={cutLine} onChange={setCutLine} placeholder="6" /></Field>
+        <Field label="Made-cut bonus / missed-cut penalty magnitude (Rules 2 & 3). Default 3.">
+          <Input type="number" value={cutBonusPoints} onChange={setCutBonusPoints} placeholder="3" />
+        </Field>
         <Button onClick={save}>Save</Button>
       </Card>
 

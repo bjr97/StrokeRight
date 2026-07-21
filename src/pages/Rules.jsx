@@ -34,7 +34,7 @@ export default function Rules() {
       </Section>
 
       <Section title="2. Made-cut bonus">
-        <p>A golfer who officially makes the cut earns a flat <span className="text-accent">+3</span>, separate from their stroke score.</p>
+        <p>A golfer who officially makes the cut earns a flat <span className="text-accent">+3</span>, separate from their stroke score. This magnitude is configurable per tournament (Admin → Live controls) — <span className="text-text">2024 majors used ±2</span> instead of ±3 for this and the two rules below.</p>
       </Section>
 
       <Section title="3. Missed-cut penalty">
