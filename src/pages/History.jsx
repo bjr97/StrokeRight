@@ -4,7 +4,7 @@ import { buildMajors, getStrokerWins, trophyCaseEmojis } from '../lib/majors.js'
 import { fmtMoney as fm } from '../lib/payouts.js';
 import { fmtDate } from '../lib/format.js';
 import { oddsToNum } from '../lib/odds.js';
-import { Card, Button, Input, Select, Pill, TierDot, confirmAsync, alertAsync, TrophyCase, TrophyCaseModal } from '../components/ui.jsx';
+import { Card, Button, Input, Select, Pill, TierDot, StatusBadge, fmtToPar, confirmAsync, alertAsync, TrophyCase, TrophyCaseModal } from '../components/ui.jsx';
 import { EVENT_TYPES, eventTypeLabel, autoTournamentName } from '../lib/eventTypes.js';
 
 const TABS = [
@@ -404,6 +404,7 @@ export default function History({ session, refreshAll }) {
 }
 
 function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
+  const [expandedEntryId, setExpandedEntryId] = useState(null);
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-2">
@@ -433,13 +434,36 @@ function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
         <div className="mt-2 pt-2 border-t border-border space-y-1">
           {m.ranked.map((r) => {
             const payout = m.payouts.get(r.entry.id);
+            const isOpen = expandedEntryId === r.entry.id;
             return (
-              <div key={r.entry.id} className="flex items-center justify-between text-xs">
-                <span><span className="text-muted inline-block w-5">{r.rank}.</span>{r.entry.name}</span>
-                <span className="tabular-nums">
-                  {r.total >= 0 ? '+' : ''}{r.total} pts
-                  {payout > 0 && <span className="text-accent ml-2">{fm(payout)}</span>}
-                </span>
+              <div key={r.entry.id}>
+                <button
+                  onClick={() => setExpandedEntryId(isOpen ? null : r.entry.id)}
+                  className="w-full flex items-center justify-between text-xs py-0.5 hover:bg-bg rounded"
+                >
+                  <span><span className="text-muted inline-block w-5">{r.rank}.</span>{r.entry.name}</span>
+                  <span className="tabular-nums">
+                    {r.total >= 0 ? '+' : ''}{r.total} pts
+                    {payout > 0 && <span className="text-accent ml-2">{fm(payout)}</span>}
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="pl-5 py-1 space-y-1">
+                    {r.scored.map((s) => (
+                      <div key={s.golfer.id} className="flex items-center justify-between text-xs">
+                        <span className="flex items-center gap-1.5">
+                          <TierDot tier={s.golfer.tier} />
+                          <span>{s.golfer.name}</span>
+                          <span className="text-muted tabular-nums">{fmtToPar(s.golfer.strokesToPar)}</span>
+                          <StatusBadge status={s.golfer.status} />
+                        </span>
+                        <span className={`tabular-nums ${s.points >= 0 ? 'text-accent' : 'text-danger'}`}>
+                          {s.points >= 0 ? `+${s.points}` : s.points}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
