@@ -87,9 +87,34 @@ export function computeWinProbabilities(rankedEntries, golfers, opts = {}) {
   const sum = exps.reduce((a, b) => a + b, 0);
   const probs = exps.map((e) => e / sum);
 
+  // Post-cut hard cliff: once the cut has happened (currentRound >= 3, same
+  // convention as cutSurvivalProb above), realistic majors essentially never
+  // get won from outside the top half of the pool — the softmax curve alone
+  // still leaves the bottom half too much probability mass. Split the field
+  // at the median (ties go to the top half) and force the bottom half down
+  // to a combined 1%, redistributing 99% across the top half in the same
+  // relative proportions the softmax already gave them.
+  const finalProbs = applyPostCutCliff(probs, currentRound);
+
   const out = new Map();
-  rankedEntries.forEach((row, i) => out.set(row.entry.id, probs[i]));
+  rankedEntries.forEach((row, i) => out.set(row.entry.id, finalProbs[i]));
   return out;
+}
+
+function applyPostCutCliff(probs, currentRound) {
+  if ((currentRound || 1) < 3 || probs.length < 2) return probs;
+
+  const order = probs.map((_, i) => i).sort((a, b) => probs[b] - probs[a]);
+  const topCount = Math.ceil(probs.length / 2);
+  const topIdx = new Set(order.slice(0, topCount));
+  const topSum = order.slice(0, topCount).reduce((s, i) => s + probs[i], 0);
+  const botSum = order.slice(topCount).reduce((s, i) => s + probs[i], 0);
+
+  return probs.map((p, i) => {
+    if (topIdx.has(i)) return topSum > 0 ? (p / topSum) * 0.99 : 0.99 / topCount;
+    const botCount = probs.length - topCount;
+    return botSum > 0 ? (p / botSum) * 0.01 : 0.01 / botCount;
+  });
 }
 
 function clampThru(thru) {
