@@ -187,9 +187,28 @@ function CreateTournament({ refreshAll }) {
   );
 }
 
+const STATUS_OPTIONS = [
+  { value: 'setup', label: 'Upcoming', activeClass: 'bg-border text-text border-border' },
+  { value: 'live', label: 'Live', activeClass: 'bg-warn/15 text-warn border-warn/30' },
+  { value: 'completed', label: 'Completed', activeClass: 'bg-accent/15 text-accent border-accent/30' },
+];
+
 function ManageTournaments({ active, refreshAll }) {
   const all = listTournaments();
   const activeId = getActiveTournamentId();
+
+  // A quick label toggle — not the same ceremony as Live Controls' "Mark
+  // tournament complete" (which also computes final standings and can file a
+  // History summary). Home/History pull completed-tournament data live from
+  // status + entries/golfers (see buildMajors()), so flipping this label is
+  // enough on its own. The one thing worth mirroring: clearing the pool-wide
+  // active id when a tournament is toggled to completed, so a finished event
+  // doesn't linger as "the" active tournament shown to everyone.
+  function setStatus(t, status) {
+    storage.set(keys.tournament(t.id), { ...t, status });
+    if (status === 'completed' && activeId === t.id) storage.delete(keys.activeTournId);
+    refreshAll();
+  }
 
   async function loadDemo() {
     const ok = await confirmAsync(
@@ -222,9 +241,21 @@ function ManageTournaments({ active, refreshAll }) {
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium">{t.name}</span>
               {t.id === activeId && <Pill color="green">Active</Pill>}
-              <Pill color={t.status === 'live' ? 'amber' : t.status === 'completed' ? 'green' : 'gray'}>{t.status}</Pill>
             </div>
             <div className="text-xs text-muted mt-1">Code: <code className="text-text">{t.poolCode}</code> · Deadline {t.deadline || 'TBD'}</div>
+            <div className="flex items-center gap-1 mt-2">
+              {STATUS_OPTIONS.map((s) => (
+                <button
+                  key={s.value}
+                  onClick={() => setStatus(t, s.value)}
+                  className={`px-2 py-0.5 rounded-full text-xs border transition ${
+                    (t.status || 'setup') === s.value ? s.activeClass : 'border-border text-muted hover:text-text'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
             <div className="mt-2">
               <Select
                 value={t.eventType || 'other'}
@@ -291,23 +322,18 @@ function NextMajorCard({ refreshAll }) {
   return (
     <Card className="p-4 space-y-2">
       <div className="text-sm font-medium">Next major countdown (homepage)</div>
-      <div className="text-xs text-muted">
-        Shows a countdown on everyone's homepage until this deadline. Meant for bridging the gap before
-        you've created the actual tournament — once a tournament exists with its own deadline, that takes
-        over automatically, but this stays saved until you clear it, so remember to clear it once it's no
-        longer needed. Event type also drives the "defending champ" line under the countdown, so set it
-        if you can.
-      </div>
-      <Select value={eventType} onChange={setEventType} options={EVENT_TYPES} className="w-full" />
-      <Input type="datetime-local" value={deadline} onChange={setDeadline} placeholder="Picks-due date & time" />
-      {nameLocked ? (
-        <div className="px-3 py-2 bg-bg border border-border rounded-lg text-sm">
-          {computedName || <span className="text-muted">Set a picks-due date above to generate the name</span>}
-        </div>
-      ) : (
-        <Input value={name} onChange={setName} placeholder="Major name (e.g. 2026 Member-Guest Classic)" />
-      )}
       <div className="flex gap-2">
+        <Select value={eventType} onChange={setEventType} options={EVENT_TYPES} className="flex-1" />
+        <Input type="datetime-local" value={deadline} onChange={setDeadline} className="flex-1" />
+      </div>
+      <div className="flex gap-2">
+        {nameLocked ? (
+          <div className="flex-1 min-w-0 px-3 py-2 bg-bg border border-border rounded-lg text-sm truncate">
+            {computedName || <span className="text-muted">Set a date above</span>}
+          </div>
+        ) : (
+          <Input value={name} onChange={setName} placeholder="Major name" className="flex-1" />
+        )}
         <Button onClick={save}>Save</Button>
         {saved && <Button variant="ghost" onClick={clear}>Clear</Button>}
       </div>
