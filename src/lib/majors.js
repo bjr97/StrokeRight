@@ -3,9 +3,10 @@ import { finalStandings } from './scoring.js';
 import { oddsToNum } from './odds.js';
 import { eventTypeEmoji } from './eventTypes.js';
 
-const LONGSHOT_THRESHOLD = 3000; // +3000 or longer odds counts as a notable pick
-const NAIL_BITER_MARGIN = 3;     // won by this many points or fewer
-const RUNAWAY_MARGIN = 10;       // won by this many points or more
+const LONGSHOT_THRESHOLD = 8000;        // a single pick this long (or longer) is notable on its own
+const UNDERDOG_TEAM_AVG_THRESHOLD = 9000; // whole-team average odds this long counts as "underdogs"
+const NAIL_BITER_MARGIN = 3;            // won by this many points or fewer
+const RUNAWAY_MARGIN = 10;              // won by this many points or more
 
 // Builds the unified "majors" list used by both the History page and the
 // Home page's recent-majors section.
@@ -41,36 +42,32 @@ export function buildMajors() {
       ranked: fs.ranked,
       payouts: fs.payouts,
     };
-    major.highlight = computeHighlight(major, tGolfers);
     full.push(major);
   }
 
   const summary = history
     .filter((h) => !fullIds.has(h.id))
-    .map((h) => {
-      const major = {
-        id: h.id,
-        name: h.name,
-        date: h.date || '',
-        fullData: false,
-        eventType: h.eventType || 'other',
-        winner: h.winner,
-        team: h.team || [],
-        points: h.points,
-        entryCount: h.entries,
-        prize: h.prize,
-      };
-      major.highlight = computeHighlight(major, null);
-      return major;
-    });
+    .map((h) => ({
+      id: h.id,
+      name: h.name,
+      date: h.date || '',
+      fullData: false,
+      eventType: h.eventType || 'other',
+      winner: h.winner,
+      team: h.team || [],
+      points: h.points,
+      entryCount: h.entries,
+      prize: h.prize,
+    }));
 
-  return [...full, ...summary];
+  // Highlights are computed in a second pass, once every major is assembled —
+  // "defending champ repeats" needs to look sideways at prior editions of the
+  // same event type, which isn't available yet mid-construction above.
+  const all = [...full, ...summary];
+  for (const major of all) major.highlight = computeHighlight(major, all);
+  return all;
 }
 
-// One auto-computed "anything interesting" line per event, in priority order:
-// a tie for the win, then a notable longshot pick on the winning team, then
-// how close/lopsided the margin was. Returns null if nothing stands out (or
-// there isn't enough data to tell, e.g. a summary-only legacy major).
 // Names of the stroker(s) who won the most recent PAST major of the given
 // event type, anchored strictly before `anchorDate` (a true "defending
 // champion" lookup — same event only, exactly one edition back, not just
@@ -80,13 +77,15 @@ export function buildMajors() {
 // major" override (anchorDate = its deadline, since there's no startDate
 // yet). Returns [] for event type 'other'/unset, missing/invalid
 // anchorDate, or no prior edition on record.
-export function getDefendingChampions({ eventType, anchorDate } = {}) {
+// `majorsList`, if provided, is used instead of calling buildMajors() again —
+// computeHighlight passes its own in-progress list here to avoid recursion.
+export function getDefendingChampions({ eventType, anchorDate } = {}, majorsList = null) {
   if (!eventType || eventType === 'other') return [];
   if (!anchorDate) return [];
   const anchor = new Date(anchorDate);
   if (isNaN(anchor)) return [];
 
-  const priorEditions = buildMajors()
+  const priorEditions = (majorsList || buildMajors())
     .filter((m) => m.eventType === eventType && m.date)
     .filter((m) => new Date(m.date) < anchor)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -96,24 +95,84 @@ export function getDefendingChampions({ eventType, anchorDate } = {}) {
   return mostRecent.winner.split(' & ').map((s) => s.trim()).filter(Boolean);
 }
 
-function computeHighlight(m, tGolfers) {
+// One auto-computed "anything interesting" line per major. Every candidate
+// fact that applies is checked, in priority order (rarest/most notable
+// first) — the first match wins, so a major with several qualifying facts
+// always shows its most interesting one rather than whichever was checked
+// first. Returns null if nothing stands out (or there isn't enough data to
+// tell, e.g. a summary-only legacy major). `allMajors` is buildMajors()'s
+// own in-progress list, needed for the "defending champ" lookback.
+function computeHighlight(m, allMajors) {
   const winners = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
+
+  // Rarest: a tie for the win.
   if (winners.length > 1) return `Tie for the win between ${winners.join(' & ')}`;
 
-  if (tGolfers?.length && m.team?.length) {
-    const byName = new Map(tGolfers.map((g) => [g.name, g]));
+  // Everything below needs the winning entry's actual picks, which only
+  // exist for full-data majors (ranked/scored come straight from live entries).
+  const winningRows = m.fullData && m.ranked?.length
+    ? m.ranked.filter((r) => r.rank === m.ranked[0].rank)
+    : [];
+
+  // Defending champion repeats.
+  if (winners.length === 1 && m.date && m.eventType && m.eventType !== 'other') {
+    const defenders = getDefendingChampions({ eventType: m.eventType, anchorDate: m.date }, allMajors);
+    if (defenders.includes(winners[0])) {
+      const priorName = allMajors
+        .filter((o) => o !== m && o.eventType === m.eventType && o.date && new Date(o.date) < new Date(m.date))
+        .sort((a, b) => new Date(b.date) - new Date(a.date))[0]?.name;
+      return `${winners[0]} defended their title${priorName ? ` from ${priorName}` : ''}`;
+    }
+  }
+
+  // Down-tier gambit paid off — winner skipped a tier and doubled up a lower one.
+  // (> 0, not just non-null: some legacy rows store 0 rather than null for "no skip".)
+  if (winningRows.length === 1 && winningRows[0].entry.downTierSkipped > 0) {
+    return `Won it after a down-tier gambit — skipped Tier ${winningRows[0].entry.downTierSkipped} to double up below it`;
+  }
+
+  // Cut-line survivor — winner won despite a missed-cut pick dragging them down.
+  if (winningRows.length) {
+    const missedCutNames = new Set();
+    for (const row of winningRows) {
+      for (const s of row.scored) {
+        if (s.golfer.status === 'missed_cut') missedCutNames.add(s.golfer.name);
+      }
+    }
+    if (missedCutNames.size === 1) {
+      return `Won it despite ${[...missedCutNames][0]} missing the cut`;
+    }
+    if (missedCutNames.size > 1) {
+      return `Won it despite ${missedCutNames.size} golfers on the team missing the cut`;
+    }
+  }
+
+  // Squad of underdogs — the whole team's average odds were long, not just one pick.
+  if (winningRows.length === 1) {
+    const oddsNums = winningRows[0].scored.map((s) => oddsToNum(s.golfer.odds)).filter((n) => n >= 0);
+    if (oddsNums.length) {
+      const avg = oddsNums.reduce((a, b) => a + b, 0) / oddsNums.length;
+      if (avg >= UNDERDOG_TEAM_AVG_THRESHOLD) {
+        return `Full squad of underdogs — averaged +${Math.round(avg).toLocaleString()} odds across all 6 picks`;
+      }
+    }
+  }
+
+  // A single standout longshot pick on the winning team(s).
+  if (winningRows.length) {
     let longshot = null;
-    for (const name of m.team) {
-      const g = byName.get(name);
-      if (!g) continue;
-      const oddsNum = oddsToNum(g.odds);
-      if (oddsNum >= LONGSHOT_THRESHOLD && (!longshot || oddsNum > longshot.oddsNum)) {
-        longshot = { name, odds: g.odds, oddsNum };
+    for (const row of winningRows) {
+      for (const s of row.scored) {
+        const oddsNum = oddsToNum(s.golfer.odds);
+        if (oddsNum >= LONGSHOT_THRESHOLD && (!longshot || oddsNum > longshot.oddsNum)) {
+          longshot = { name: s.golfer.name, odds: s.golfer.odds, oddsNum };
+        }
       }
     }
     if (longshot) return `Rode a longshot pick: ${longshot.name} (${longshot.odds})`;
   }
 
+  // Most common: how close/lopsided the margin was.
   if (m.ranked?.length >= 2) {
     const totals = [...new Set(m.ranked.map((r) => r.total))].sort((a, b) => b - a);
     if (totals.length >= 2) {
