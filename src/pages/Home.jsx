@@ -5,7 +5,7 @@ import { computePayouts, fmtMoney } from '../lib/payouts.js';
 import { buildMajors, getDefendingChampions, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, trophyCaseEmojis } from '../lib/majors.js';
 import { eventTypeLabel } from '../lib/eventTypes.js';
 import { fmtDate } from '../lib/format.js';
-import { Card, Stat, Button, TrophyCase, TrophyCaseModal } from '../components/ui.jsx';
+import { Card, Stat, Button, TrophyCase, TrophyCaseModal, TierDot, StatusBadge, fmtToPar } from '../components/ui.jsx';
 
 export default function Home({ tournament, golfers, entries, session, onNav }) {
   const nextMajor = storage.get(keys.nextMajor);
@@ -258,6 +258,14 @@ function Countdown({ name, deadline, defendingChampions = [], lastMajorOverall =
 }
 
 function RecentMajorCard({ m }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Winning entry (or entries, if tied) — m.ranked is sorted by rank ascending.
+  const winningRows = m.fullData && m.ranked?.length
+    ? m.ranked.filter((r) => r.rank === m.ranked[0].rank)
+    : [];
+  const canExpand = winningRows.length > 0;
+
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-2">
@@ -275,6 +283,38 @@ function RecentMajorCard({ m }) {
       <div className="text-xs text-muted mt-2">Winner: <span className="text-text">{m.winner}</span></div>
       {!!m.team?.length && <div className="text-xs text-muted mt-0.5">{m.team.join(', ')}</div>}
       {m.highlight && <div className="text-xs text-warn mt-2">✨ {m.highlight}</div>}
+
+      {canExpand && (
+        <button onClick={() => setExpanded((e) => !e)} className="text-xs text-accent mt-2">
+          {expanded ? '▴ Hide' : '▾ View'} score breakdown
+        </button>
+      )}
+      {canExpand && expanded && (
+        <div className="mt-2 pt-2 border-t border-border space-y-2">
+          {winningRows.map((r) => (
+            <div key={r.entry.id}>
+              {winningRows.length > 1 && (
+                <div className="text-xs font-medium mb-1">{r.entry.name}</div>
+              )}
+              <div className="space-y-1">
+                {r.scored.map((s) => (
+                  <div key={s.golfer.id} className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5">
+                      <TierDot tier={s.golfer.tier} />
+                      <span>{s.golfer.name}</span>
+                      <span className="text-muted tabular-nums">{fmtToPar(s.golfer.strokesToPar)}</span>
+                      <StatusBadge status={s.golfer.status} />
+                    </span>
+                    <span className={`tabular-nums ${s.points >= 0 ? 'text-accent' : 'text-danger'}`}>
+                      {s.points >= 0 ? `+${s.points}` : s.points}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </Card>
   );
 }
