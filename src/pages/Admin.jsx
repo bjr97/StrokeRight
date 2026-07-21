@@ -16,17 +16,33 @@ const LIVE_ODDS_SPORT_KEYS = {
   open: 'golf_the_open_championship_winner',
 };
 
-export default function Admin({ tournament, golfers, refreshAll }) {
+export default function Admin({ tournament, refreshAll }) {
   const [tab, setTab] = useState(tournament ? 'manage' : 'create');
+  const allTournaments = listTournaments();
+  const activeId = getActiveTournamentId();
+  const allIds = allTournaments.map((t) => t.id).join(',');
 
-  // Previously a parent-level remount reset this whenever `tournament`
-  // changed identity (e.g. after "Mark tournament complete" clears the
-  // active tournament). That remount also wiped every other page's local
-  // UI state on any background refresh, so it's gone now — this replaces
-  // just the one thing it was actually needed for here.
+  // Tiers and Live controls used to be locked to whichever tournament is
+  // "active" (the one shown pool-wide). That meant you couldn't set up tiers
+  // for a tournament ahead of activating it, or fix up a just-completed one's
+  // scoring, without re-activating it first. This lets those two tabs target
+  // any tournament in the list independently of what's currently active.
+  const [selectedId, setSelectedId] = useState(() => activeId || allTournaments[0]?.id || null);
   useEffect(() => {
-    if (!tournament && (tab === 'tiers' || tab === 'live')) setTab('manage');
-  }, [tournament, tab]);
+    if (!allTournaments.length) { setSelectedId(null); return; }
+    if (!allTournaments.some((t) => t.id === selectedId)) {
+      setSelectedId(getActiveTournamentId() || allTournaments[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allIds]);
+
+  const selectedTournament = selectedId ? storage.get(keys.tournament(selectedId)) : null;
+  const selectedGolfers = selectedId ? (storage.get(keys.golfers(selectedId)) || []) : [];
+
+  useEffect(() => {
+    if (!allTournaments.length && (tab === 'tiers' || tab === 'live')) setTab('manage');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allIds, tab]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-32 md:pb-6 space-y-6">
@@ -47,11 +63,34 @@ export default function Admin({ tournament, golfers, refreshAll }) {
         ))}
       </div>
 
+      {(tab === 'tiers' || tab === 'live') && !!allTournaments.length && (
+        <TournamentPicker tournaments={allTournaments} activeId={activeId} selectedId={selectedId} onChange={setSelectedId} />
+      )}
+
       {tab === 'create' && <CreateTournament refreshAll={refreshAll} />}
       {tab === 'manage' && <ManageTournaments active={tournament} refreshAll={refreshAll} />}
-      {tab === 'tiers' && tournament && <TierManager tournament={tournament} golfers={golfers} refreshAll={refreshAll} />}
-      {tab === 'live' && tournament && <LiveControls tournament={tournament} golfers={golfers} refreshAll={refreshAll} />}
+      {tab === 'tiers' && selectedTournament && <TierManager key={selectedTournament.id} tournament={selectedTournament} golfers={selectedGolfers} refreshAll={refreshAll} />}
+      {tab === 'live' && selectedTournament && <LiveControls key={selectedTournament.id} tournament={selectedTournament} golfers={selectedGolfers} refreshAll={refreshAll} />}
+      {(tab === 'tiers' || tab === 'live') && !allTournaments.length && (
+        <Card className="p-5 text-muted text-sm">
+          No tournaments yet. Click <span className="text-text">New</span> to create one.
+        </Card>
+      )}
     </div>
+  );
+}
+
+function TournamentPicker({ tournaments, activeId, selectedId, onChange }) {
+  const options = tournaments.map((t) => ({
+    value: t.id,
+    label: `${t.name} — ${t.status}${t.id === activeId ? ' • Active' : ''}`,
+  }));
+  return (
+    <Card className="p-3">
+      <Field label="Managing event">
+        <Select value={selectedId ?? ''} onChange={onChange} options={options} className="w-full" />
+      </Field>
+    </Card>
   );
 }
 
