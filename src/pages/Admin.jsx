@@ -16,6 +16,15 @@ const LIVE_ODDS_SPORT_KEYS = {
   open: 'golf_the_open_championship_winner',
 };
 
+// Prefers the active tournament, falls back to the first non-completed one
+// (completed tournaments are hidden from the picker by default — see
+// TournamentPicker — so defaulting to one would be a confusing dead end).
+function pickDefaultId(tournaments, activeId) {
+  if (activeId && tournaments.some((t) => t.id === activeId)) return activeId;
+  const nonCompleted = tournaments.find((t) => (t.status || 'setup') !== 'completed');
+  return nonCompleted?.id ?? tournaments[0]?.id ?? null;
+}
+
 export default function Admin({ tournament, refreshAll }) {
   const [tab, setTab] = useState(tournament ? 'manage' : 'create');
   const allTournaments = listTournaments();
@@ -25,13 +34,13 @@ export default function Admin({ tournament, refreshAll }) {
   // Tiers and Live controls used to be locked to whichever tournament is
   // "active" (the one shown pool-wide). That meant you couldn't set up tiers
   // for a tournament ahead of activating it, or fix up a just-completed one's
-  // scoring, without re-activating it first. This lets those two tabs target
+  // scoring, without re-activating it first. This lets the Edit tab target
   // any tournament in the list independently of what's currently active.
-  const [selectedId, setSelectedId] = useState(() => activeId || allTournaments[0]?.id || null);
+  const [selectedId, setSelectedId] = useState(() => pickDefaultId(allTournaments, activeId));
   useEffect(() => {
     if (!allTournaments.length) { setSelectedId(null); return; }
     if (!allTournaments.some((t) => t.id === selectedId)) {
-      setSelectedId(getActiveTournamentId() || allTournaments[0].id);
+      setSelectedId(pickDefaultId(allTournaments, getActiveTournamentId()));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allIds]);
@@ -40,9 +49,14 @@ export default function Admin({ tournament, refreshAll }) {
   const selectedGolfers = selectedId ? (storage.get(keys.golfers(selectedId)) || []) : [];
 
   useEffect(() => {
-    if (!allTournaments.length && (tab === 'tiers' || tab === 'live')) setTab('manage');
+    if (!allTournaments.length && tab === 'edit') setTab('manage');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allIds, tab]);
+
+  function editTournament(id) {
+    setSelectedId(id);
+    setTab('edit');
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-32 md:pb-6 space-y-6">
@@ -52,26 +66,36 @@ export default function Admin({ tournament, refreshAll }) {
       </div>
 
       <div className="flex gap-2 border-b border-border">
-        {['manage', 'tiers', 'create', 'live'].map((t) => (
+        {['manage', 'edit', 'create'].map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === t ? 'border-accent text-text' : 'border-transparent text-muted'}`}
           >
-            {t === 'manage' ? 'Manage' : t === 'tiers' ? 'Tiers' : t === 'create' ? 'New' : 'Live controls'}
+            {t === 'manage' ? 'Manage' : t === 'edit' ? 'Edit' : 'New'}
           </button>
         ))}
       </div>
 
-      {(tab === 'tiers' || tab === 'live') && !!allTournaments.length && (
+      {tab === 'edit' && !!allTournaments.length && (
         <TournamentPicker tournaments={allTournaments} activeId={activeId} selectedId={selectedId} onChange={setSelectedId} />
       )}
 
       {tab === 'create' && <CreateTournament refreshAll={refreshAll} />}
-      {tab === 'manage' && <ManageTournaments active={tournament} refreshAll={refreshAll} />}
-      {tab === 'tiers' && selectedTournament && <TierManager key={selectedTournament.id} tournament={selectedTournament} golfers={selectedGolfers} refreshAll={refreshAll} />}
-      {tab === 'live' && selectedTournament && <LiveControls key={selectedTournament.id} tournament={selectedTournament} golfers={selectedGolfers} refreshAll={refreshAll} />}
-      {(tab === 'tiers' || tab === 'live') && !allTournaments.length && (
+      {tab === 'manage' && <ManageTournaments active={tournament} refreshAll={refreshAll} onEdit={editTournament} />}
+      {tab === 'edit' && selectedTournament && (
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-sm font-semibold text-text mb-2">Tiers</h2>
+            <TierManager key={`${selectedTournament.id}-tiers`} tournament={selectedTournament} golfers={selectedGolfers} refreshAll={refreshAll} />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-text mb-2">Live controls</h2>
+            <LiveControls key={`${selectedTournament.id}-live`} tournament={selectedTournament} golfers={selectedGolfers} refreshAll={refreshAll} />
+          </div>
+        </div>
+      )}
+      {tab === 'edit' && !allTournaments.length && (
         <Card className="p-5 text-muted text-sm">
           No tournaments yet. Click <span className="text-text">New</span> to create one.
         </Card>
@@ -81,7 +105,12 @@ export default function Admin({ tournament, refreshAll }) {
 }
 
 function TournamentPicker({ tournaments, activeId, selectedId, onChange }) {
-  const options = tournaments.map((t) => ({
+  // Completed events are hidden here by default (there are usually a dozen+
+  // of them and they rarely need touching) — except whichever one is
+  // currently selected, so following an Edit link from Manage to a completed
+  // tournament doesn't immediately bounce the picker to something else.
+  const filtered = tournaments.filter((t) => (t.status || 'setup') !== 'completed' || t.id === selectedId);
+  const options = filtered.map((t) => ({
     value: t.id,
     label: `${t.name} — ${t.status}${t.id === activeId ? ' • Active' : ''}`,
   }));
@@ -198,7 +227,7 @@ const STATUS_OPTIONS = [
 // happens to return them.
 const STATUS_SORT_RANK = { setup: 0, live: 1, completed: 2 };
 
-function ManageTournaments({ active, refreshAll }) {
+function ManageTournaments({ active, refreshAll, onEdit }) {
   const all = listTournaments();
   const activeId = getActiveTournamentId();
   const [statusFilter, setStatusFilter] = useState('all');
@@ -287,6 +316,7 @@ function ManageTournaments({ active, refreshAll }) {
             {t.id !== activeId && (
               <Button variant="secondary" onClick={() => { setActiveTournamentId(t.id); refreshAll(); }}>Activate</Button>
             )}
+            <Button variant="secondary" onClick={() => onEdit(t.id)}>Edit</Button>
             <Button
               variant="danger"
               onClick={async () => {
