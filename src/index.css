@@ -24,3 +24,9 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 50%;
   cursor: pointer;
 }
+
+/* Bottom mobile nav: pad for the iPhone home-indicator safe area so the
+   fixed bar isn't tucked under it. */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}

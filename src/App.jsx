@@ -121,7 +121,7 @@ export default function App() {
 
   if (!bootstrapped) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-muted">
+      <div className="min-h-dvh flex items-center justify-center text-muted">
         <div className="text-center">
           <div className="animate-pulse">Loading pool data…</div>
           {!SUPABASE_READY && <div className="text-xs mt-2">No Supabase config — local mode only</div>}
@@ -132,7 +132,7 @@ export default function App() {
 
   if (bootError) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="min-h-dvh flex items-center justify-center px-4">
         <Card className="max-w-md p-5">
           <div className="text-danger font-medium mb-2">Could not connect to Supabase</div>
           <div className="text-sm text-muted mb-3">{bootError}</div>
@@ -153,7 +153,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <Nav page={page} onChange={setPage} session={session} onLogout={handleLogout} />
 
       <main className="pb-20 md:pb-0">
@@ -226,7 +226,7 @@ function AdminLogin({ onAuth, onCancel }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-dvh flex items-center justify-center px-4">
       <Card className="w-full max-w-sm p-6">
         <div className="text-xs text-warn uppercase tracking-wide mb-1">Admin login</div>
         <h1 className="text-lg font-semibold mb-4">Enter admin code</h1>

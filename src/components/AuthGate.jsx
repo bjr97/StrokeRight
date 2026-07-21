@@ -21,7 +21,7 @@ export default function AuthGate({ onAuth, tournament }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-dvh flex items-center justify-center px-4">
       <Card className="w-full max-w-sm p-6">
         <div className="flex items-center gap-2 mb-1">
           <div className="w-2 h-2 rounded-full bg-accent" />
