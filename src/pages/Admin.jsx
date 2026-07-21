@@ -81,7 +81,7 @@ export default function Admin({ tournament, refreshAll }) {
         <TournamentPicker tournaments={allTournaments} activeId={activeId} selectedId={selectedId} onChange={setSelectedId} />
       )}
 
-      {tab === 'create' && <CreateTournament refreshAll={refreshAll} />}
+      {tab === 'create' && <CreateTournament refreshAll={refreshAll} onDone={() => setTab('manage')} />}
       {tab === 'manage' && <ManageTournaments active={tournament} refreshAll={refreshAll} onEdit={editTournament} />}
       {tab === 'edit' && selectedTournament && (
         <div className="space-y-6">
@@ -143,10 +143,15 @@ function formatDeadlinePreview(deadline) {
   return `${datePart} · ${timePart}`;
 }
 
-function CreateTournament({ refreshAll }) {
+function CreateTournament({ refreshAll, onDone }) {
   const [form, setForm] = useState({
     name: '', startDate: '', poolCode: '', course: '', eventType: 'other',
   });
+  // Once the tournament record exists, step 2 reuses TierManager against it
+  // directly — the field import is skippable (you can always add it later
+  // from Edit), so this just tracks whether we've moved past step 1, not
+  // whether tiers were actually set.
+  const [createdTournament, setCreatedTournament] = useState(null);
 
   const nameLocked = form.eventType !== 'other';
   const computedName = autoTournamentName(form.eventType, form.startDate);
@@ -181,10 +186,26 @@ function CreateTournament({ refreshAll }) {
     storage.set(keys.entries(id), []);
     setActiveTournamentId(id);
     refreshAll();
+    setCreatedTournament(t);
+  }
+
+  if (createdTournament) {
+    return (
+      <div className="space-y-4">
+        <Card className="p-4">
+          <div className="text-xs text-warn uppercase tracking-wide">Step 2 of 2</div>
+          <div className="font-medium mt-0.5">"{createdTournament.name}" created — import the field</div>
+          <div className="text-xs text-muted mt-1">Optional — skip this and add the field anytime from Edit.</div>
+        </Card>
+        <TierManager tournament={createdTournament} golfers={[]} refreshAll={refreshAll} />
+        <Button variant="ghost" onClick={onDone}>Done — go to Manage</Button>
+      </div>
+    );
   }
 
   return (
     <Card className="p-5 space-y-4">
+      <div className="text-xs text-warn uppercase tracking-wide">Step 1 of 2</div>
       <Field label="Event type"><Select value={form.eventType} onChange={(v) => setForm({ ...form, eventType: v })} options={EVENT_TYPES} className="w-full" /></Field>
       <Field label="Start date"><Input type="date" value={form.startDate} onChange={(v) => setForm({ ...form, startDate: v })} /></Field>
       <Field label="Picks deadline (auto: 11:59 PM the day before start)">
@@ -211,7 +232,7 @@ function CreateTournament({ refreshAll }) {
         )}
       </Field>
       <Field label="Pool code (share with participants)"><Input value={form.poolCode} onChange={(v) => setForm({ ...form, poolCode: v })} placeholder="masters26" /></Field>
-      <Button onClick={save}>Create tournament</Button>
+      <Button onClick={save}>Create tournament — continue to tiers</Button>
     </Card>
   );
 }
