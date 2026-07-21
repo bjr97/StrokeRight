@@ -4,7 +4,7 @@ import { seedDemoMasters } from '../lib/seedData.js';
 import { finalStandings } from '../lib/scoring.js';
 import { fmtMoney } from '../lib/payouts.js';
 import { Card, Button, Input, Select, Pill, TierDot, TIER_COLORS, fmtToPar, confirmAsync, alertAsync } from '../components/ui.jsx';
-import { EVENT_TYPES, autoTournamentName, fixedCourse } from '../lib/eventTypes.js';
+import { EVENT_TYPES, autoTournamentName, fixedCourse, eventTypeLabel, eventTypeEmoji } from '../lib/eventTypes.js';
 import { autoTierByOdds } from '../lib/tiering.js';
 
 // Event types with a live odds feed available (The Odds API free tier only
@@ -193,9 +193,19 @@ const STATUS_OPTIONS = [
   { value: 'completed', label: 'Completed', activeClass: 'bg-accent/15 text-accent border-accent/30' },
 ];
 
+// Group order for the "All" view — upcoming/live surfaced above completed,
+// matching the lifecycle progression rather than however listTournaments()
+// happens to return them.
+const STATUS_SORT_RANK = { setup: 0, live: 1, completed: 2 };
+
 function ManageTournaments({ active, refreshAll }) {
   const all = listTournaments();
   const activeId = getActiveTournamentId();
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  const visible = statusFilter === 'all'
+    ? [...all].sort((a, b) => (STATUS_SORT_RANK[a.status || 'setup'] ?? 0) - (STATUS_SORT_RANK[b.status || 'setup'] ?? 0))
+    : all.filter((t) => (t.status || 'setup') === statusFilter);
 
   // A quick label toggle — not the same ceremony as Live Controls' "Mark
   // tournament complete" (which also computes final standings and can file a
@@ -235,12 +245,28 @@ function ManageTournaments({ active, refreshAll }) {
   return (
     <div className="space-y-2">
       <NextMajorCard refreshAll={refreshAll} />
-      {all.map((t) => (
+
+      <div className="flex items-center gap-1">
+        {[{ value: 'all', label: 'All' }, ...STATUS_OPTIONS].map((s) => (
+          <button
+            key={s.value}
+            onClick={() => setStatusFilter(s.value)}
+            className={`px-2.5 py-1 rounded-lg text-xs border transition ${
+              statusFilter === s.value ? 'bg-accent text-bg border-accent' : 'border-border text-muted hover:text-text'
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {visible.map((t) => (
         <Card key={t.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium">{t.name}</span>
               {t.id === activeId && <Pill color="green">Active</Pill>}
+              <span className="text-xs text-muted">{eventTypeEmoji(t.eventType)} {eventTypeLabel(t.eventType)}</span>
             </div>
             <div className="text-xs text-muted mt-1">Code: <code className="text-text">{t.poolCode}</code> · Deadline {t.deadline || 'TBD'}</div>
             <div className="flex items-center gap-1 mt-2">
@@ -255,14 +281,6 @@ function ManageTournaments({ active, refreshAll }) {
                   {s.label}
                 </button>
               ))}
-            </div>
-            <div className="mt-2">
-              <Select
-                value={t.eventType || 'other'}
-                onChange={(v) => { storage.set(keys.tournament(t.id), { ...t, eventType: v }); refreshAll(); }}
-                options={EVENT_TYPES}
-                className="text-xs py-1"
-              />
             </div>
           </div>
           <div className="flex gap-2">
