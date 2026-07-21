@@ -43,26 +43,10 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   const hasRecords = !!(mostDecorated || streaks.overall || streaks.sameEvent || grandSlam.leaders.length);
 
   const strokerWins = getStrokerWins(); // cheap; always fresh
-  const [trophyFor, setTrophyFor] = useState(null); // { label, wins } or null
+  const [trophyFor, setTrophyFor] = useState(null); // { label, wins } or null — single-stroker icon click
+  const [showMostDecoratedModal, setShowMostDecoratedModal] = useState(false);
   const [showStreakModal, setShowStreakModal] = useState(false);
   const [showGrandSlamModal, setShowGrandSlamModal] = useState(false);
-
-  // Merges wins across every tied "most decorated" name into one deduped,
-  // date-sorted list — a major two strokers tied on appears once, not twice.
-  function combinedWins(names) {
-    const seen = new Set();
-    const merged = [];
-    for (const n of names) {
-      for (const w of strokerWins.get(n) || []) {
-        const key = `${w.major}|${w.date}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        merged.push(w);
-      }
-    }
-    merged.sort((a, b) => new Date(b.date) - new Date(a.date));
-    return merged;
-  }
 
   let ranked = [], structure = null, leader = null, myEntries = [];
   if (tournament) {
@@ -173,7 +157,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
           <div className="text-xs text-muted uppercase tracking-wide mb-2">Pool records</div>
           <div className="grid gap-2 sm:grid-cols-3">
             {mostDecorated && (
-              <Card className="p-4" onClick={() => setTrophyFor({ label: mostDecorated.names.join(' & '), wins: combinedWins(mostDecorated.names) })}>
+              <Card className="p-4" onClick={() => setShowMostDecoratedModal(true)}>
                 <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Most decorated</div>
                 <div className="text-lg font-semibold">{mostDecorated.names.join(' & ')}</div>
                 <div className="flex items-center gap-2 mt-0.5">
@@ -224,12 +208,58 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
       {trophyFor && (
         <TrophyCaseModal name={trophyFor.label} wins={trophyFor.wins} onClose={() => setTrophyFor(null)} />
       )}
+      {showMostDecoratedModal && (
+        <MostDecoratedModal names={mostDecorated.names} strokerWins={strokerWins} onClose={() => setShowMostDecoratedModal(false)} />
+      )}
       {showStreakModal && (
         <StreakModal streaks={streaks} onClose={() => setShowStreakModal(false)} />
       )}
       {showGrandSlamModal && (
         <GrandSlamModal grandSlam={grandSlam} myGrandSlam={myGrandSlam} myName={session?.name} onClose={() => setShowGrandSlamModal(false)} />
       )}
+    </div>
+  );
+}
+
+// A list of majors (name/date/eventType), used identically inside each of
+// the 3 modals below whenever a single player's record needs to be spelled
+// out major-by-major.
+function MajorsList({ majors }) {
+  return (
+    <div className="space-y-1">
+      {majors.map((m, i) => (
+        <div key={i} className="flex items-center gap-2 text-sm">
+          <span>{eventTypeEmoji(m.eventType) || '🏅'}</span>
+          <span className="text-text">{m.name}</span>
+          <span className="text-muted text-xs ml-auto whitespace-nowrap">{fmtDate(m.date)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// When a record has multiple co-holders, each gets its own clearly labeled
+// section (not a merged/combined view) so it's obvious whose wins are whose.
+function MostDecoratedModal({ names, strokerWins, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-medium">Most decorated</div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        <div className="space-y-4">
+          {names.map((n, i) => {
+            const wins = strokerWins.get(n) || [];
+            return (
+              <div key={n} className={i > 0 ? 'pt-3 border-t border-border' : ''}>
+                <div className="text-sm font-medium mb-2">{n} — {wins.length} win{wins.length === 1 ? '' : 's'}</div>
+                <MajorsList majors={wins.map((w) => ({ name: w.major, date: w.date, eventType: w.eventType }))} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -245,36 +275,28 @@ function StreakModal({ streaks, onClose }) {
         <div className="space-y-4">
           {streaks.overall && (
             <div>
-              <div className="text-sm mb-2">
-                <span className="font-semibold">{streaks.overall.names.join(' & ')}</span>
-                <span className="text-muted"> — {streaks.overall.length} majors in a row</span>
+              <div className="text-xs text-muted uppercase tracking-wide mb-2">
+                {streaks.overall.length} majors in a row
               </div>
-              <div className="space-y-1">
-                {streaks.overall.majors.map((m, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <span>{eventTypeEmoji(m.eventType) || '🏅'}</span>
-                    <span className="text-text">{m.name}</span>
-                    <span className="text-muted text-xs ml-auto whitespace-nowrap">{fmtDate(m.date)}</span>
-                  </div>
-                ))}
-              </div>
+              {streaks.overall.names.map((n, i) => (
+                <div key={n} className={i > 0 ? 'pt-3 mt-3 border-t border-border' : ''}>
+                  <div className="text-sm font-medium mb-1">{n}</div>
+                  <MajorsList majors={streaks.overall.byName.get(n)} />
+                </div>
+              ))}
             </div>
           )}
           {streaks.sameEvent && (
-            <div className={streaks.overall ? 'pt-3 border-t border-border' : ''}>
-              <div className="text-sm mb-2">
-                <span className="font-semibold">{streaks.sameEvent.names.join(' & ')}</span>
-                <span className="text-muted"> — {streaks.sameEvent.length} straight {eventTypeLabel(streaks.sameEvent.eventType)}</span>
+            <div className={streaks.overall ? 'pt-4 border-t border-border' : ''}>
+              <div className="text-xs text-muted uppercase tracking-wide mb-2">
+                {streaks.sameEvent.length} straight {eventTypeLabel(streaks.sameEvent.eventType)}
               </div>
-              <div className="space-y-1">
-                {streaks.sameEvent.majors.map((m, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <span>{eventTypeEmoji(m.eventType) || '🏅'}</span>
-                    <span className="text-text">{m.name}</span>
-                    <span className="text-muted text-xs ml-auto whitespace-nowrap">{fmtDate(m.date)}</span>
-                  </div>
-                ))}
-              </div>
+              {streaks.sameEvent.names.map((n, i) => (
+                <div key={n} className={i > 0 ? 'pt-3 mt-3 border-t border-border' : ''}>
+                  <div className="text-sm font-medium mb-1">{n}</div>
+                  <MajorsList majors={streaks.sameEvent.byName.get(n)} />
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -297,9 +319,6 @@ function GrandSlamChecklist({ typesWon }) {
 }
 
 function GrandSlamModal({ grandSlam, myGrandSlam, myName, onClose }) {
-  const leaderNames = grandSlam.leaders.map((l) => l.name).join(' & ');
-  const leaderCount = grandSlam.leaders[0]?.count ?? 0;
-  const leaderTypes = new Set(grandSlam.leaders[0]?.types || []);
   const myTypes = new Set(myGrandSlam.types || []);
 
   return (
@@ -310,10 +329,12 @@ function GrandSlamModal({ grandSlam, myGrandSlam, myName, onClose }) {
           <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
         </div>
         <div className="space-y-4">
-          <div>
-            <div className="text-sm font-medium mb-2">{leaderNames} — {leaderCount}/4</div>
-            <GrandSlamChecklist typesWon={leaderTypes} />
-          </div>
+          {grandSlam.leaders.map((l, i) => (
+            <div key={l.name} className={i > 0 ? 'pt-3 border-t border-border' : ''}>
+              <div className="text-sm font-medium mb-2">{l.name} — {l.count}/4</div>
+              <GrandSlamChecklist typesWon={new Set(l.types)} />
+            </div>
+          ))}
           <div className="pt-3 border-t border-border">
             <div className="text-sm font-medium mb-2">Your progress{myName ? ` (${myName})` : ''} — {myGrandSlam.count}/4</div>
             <GrandSlamChecklist typesWon={myTypes} />

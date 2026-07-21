@@ -246,8 +246,10 @@ export function getMostDecorated(majors) {
 // Walks a chronologically-sorted list of majors and finds, per stroker, the
 // longest run of CONSECUTIVE majors (within that list) they won. A tied win
 // counts as a win for everyone in the tie, so a co-championship extends
-// everyone's streak, not just one person's. Tracks the actual majors in the
-// best streak (not just its length) so a caller can show what it consisted of.
+// everyone's streak, not just one person's. Tracks the actual majors behind
+// each name's best streak (not just its length) so a caller can show what it
+// consisted of — kept PER NAME, since two people can independently reach the
+// same max streak length via entirely different major sequences.
 function longestConsecutiveWinStreak(sortedMajors) {
   const current = new Map(); // name -> running list of majors in the current streak
   const best = new Map();    // name -> majors list of the best streak seen
@@ -267,8 +269,10 @@ function longestConsecutiveWinStreak(sortedMajors) {
   const max = Math.max(...[...best.values()].map((l) => l.length));
   if (max < 2) return null; // a "streak" of 1 isn't a streak
   const names = [...best.entries()].filter(([, l]) => l.length === max).map(([n]) => n);
-  const majors = best.get(names[0]).map((m) => ({ name: m.name, date: m.date, eventType: m.eventType }));
-  return { names, length: max, majors };
+  const byName = new Map(
+    names.map((n) => [n, best.get(n).map((m) => ({ name: m.name, date: m.date, eventType: m.eventType }))])
+  );
+  return { names, length: max, byName };
 }
 
 /**
