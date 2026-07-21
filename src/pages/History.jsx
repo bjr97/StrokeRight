@@ -68,10 +68,12 @@ export default function History({ session, refreshAll }) {
   // Entries / $ spent / ROI / podiums / golfer picks: only from full-data
   // majors — that's the only place we know every stroker's entry and every
   // paid position, not just the winner's.
-  const { strokerRows, golferRows, longestShot, totalPicksLogged } = useMemo(() => {
+  const { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows } = useMemo(() => {
     const legacy = new Map(); // name -> { wins, moneyWon } — from summary-only majors
     const full = new Map();   // name -> { entries, feesPaid, winsFull, podiumOnly, moneyFull }
     const golferCounts = new Map();
+    const golferWinCounts = new Map();  // name -> { count, tier } — winning-team appearances
+    const golferScoreSum = new Map();   // name -> { sum, majorsCount, tier } — real strokesToPar, once per event
     let longestShot = null; // { name, odds, oddsNum } — worst odds ever actually picked
     let totalPicksLogged = 0;
 
@@ -122,6 +124,39 @@ export default function History({ session, refreshAll }) {
         }
       }
 
+      // Winning-team golfer appearances — once per major, not per entry, so
+      // a golfer picked by both halves of a tie only counts once for that event.
+      if (major.ranked?.length) {
+        const topRank = major.ranked[0].rank;
+        const seenThisMajor = new Set();
+        for (const r of major.ranked) {
+          if (r.rank !== topRank) continue;
+          for (const s of r.scored) {
+            if (seenThisMajor.has(s.golfer.name)) continue;
+            seenThisMajor.add(s.golfer.name);
+            const wrec = golferWinCounts.get(s.golfer.name) || { count: 0, tier: s.golfer.tier };
+            wrec.count += 1;
+            wrec.tier = s.golfer.tier;
+            golferWinCounts.set(s.golfer.name, wrec);
+          }
+        }
+      }
+
+      // Cumulative real score — each golfer's own strokesToPar for this event,
+      // added once regardless of how many entries drafted them (it's their
+      // score, not the pool's fantasy points).
+      const pickedIdsThisMajor = new Set();
+      for (const e of tEntries) for (const gid of e.golferIds || []) pickedIdsThisMajor.add(gid);
+      for (const gid of pickedIdsThisMajor) {
+        const g = golferLookup.get(gid);
+        if (!g || typeof g.strokesToPar !== 'number') continue;
+        const srec = golferScoreSum.get(g.name) || { sum: 0, majorsCount: 0, tier: g.tier };
+        srec.sum += g.strokesToPar;
+        srec.majorsCount += 1;
+        srec.tier = g.tier;
+        golferScoreSum.set(g.name, srec);
+      }
+
       // Every entry that actually got paid — not just the winning rank.
       // This is how a runner-up who cashed a payout but never won shows up.
       for (const r of major.ranked || []) {
@@ -159,7 +194,18 @@ export default function History({ session, refreshAll }) {
       .sort((a, b) => b.count - a.count)
       .slice(0, 15);
 
-    return { strokerRows, golferRows, longestShot, totalPicksLogged };
+    const winningestGolfers = [...golferWinCounts.entries()]
+      .map(([name, r]) => ({ name, count: r.count, tier: r.tier }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15);
+
+    // Most under par (best real-life performance) first.
+    const cumulativeScoreRows = [...golferScoreSum.entries()]
+      .map(([name, r]) => ({ name, sum: r.sum, majorsCount: r.majorsCount, tier: r.tier }))
+      .sort((a, b) => a.sum - b.sum)
+      .slice(0, 15);
+
+    return { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows };
   }, [majors, allTournaments]);
 
   const sortedStrokers = useMemo(() => {
@@ -383,9 +429,30 @@ export default function History({ session, refreshAll }) {
       )}
 
       {tab === 'golfers' && (
-        <div className="space-y-2">
-          <div className="text-sm font-medium">Most picked golfers overall</div>
-          <GolferBars rows={golferRows} />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Most picked golfers overall</div>
+            <GolferBars rows={golferRows} />
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Winningest golfers</div>
+            <GolferBars rows={winningestGolfers} />
+            <p className="text-xs text-muted">
+              Appearances on a winning team, across majors with full data. A tie counts once for each co-winner
+              who had that golfer.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium">All-time cumulative score</div>
+            <GolferScoreList rows={cumulativeScoreRows} />
+            <p className="text-xs text-muted">
+              Each golfer's own real strokes-to-par, added once per event they were picked in — not the pool's
+              fantasy points, and not multiplied by how many entries drafted them. Lower is better.
+            </p>
+          </div>
+
           <p className="text-xs text-muted">
             Based on majors with full pick data. This gets more meaningful every time another tournament is
             marked complete.
@@ -551,6 +618,40 @@ function GolferBars({ rows }) {
         </div>
       ))}
       {!rows.length && <div className="text-muted text-sm">No full pick data yet.</div>}
+    </Card>
+  );
+}
+
+function GolferScoreList({ rows }) {
+  return (
+    <Card className="p-2 sm:p-3 overflow-x-auto">
+      <table className="w-full text-xs sm:text-sm">
+        <thead>
+          <tr>
+            <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-left pb-1.5 px-1.5">Golfer</th>
+            <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Events</th>
+            <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Cumulative</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((g, i) => (
+            <tr key={g.name} className="border-t border-border">
+              <td className="py-1.5 sm:py-2 px-1.5">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-4 text-right text-muted">{i + 1}</span>
+                  <TierDot tier={g.tier} />
+                  <span className="truncate">{g.name}</span>
+                </span>
+              </td>
+              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums text-muted">{g.majorsCount}</td>
+              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums">{fmtToPar(g.sum)}</td>
+            </tr>
+          ))}
+          {!rows.length && (
+            <tr><td colSpan={3} className="py-4 text-center text-muted text-sm">No full pick data yet.</td></tr>
+          )}
+        </tbody>
+      </table>
     </Card>
   );
 }
