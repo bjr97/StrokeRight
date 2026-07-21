@@ -5,6 +5,16 @@ import { finalStandings } from '../lib/scoring.js';
 import { fmtMoney } from '../lib/payouts.js';
 import { Card, Button, Input, Select, Pill, TierDot, TIER_COLORS, fmtToPar, confirmAsync, alertAsync } from '../components/ui.jsx';
 import { EVENT_TYPES, autoTournamentName } from '../lib/eventTypes.js';
+import { autoTierByOdds } from '../lib/tiering.js';
+
+// Event types with a live odds feed available (The Odds API free tier only
+// covers the 4 real majors — everything else still uses the manual paste).
+const LIVE_ODDS_SPORT_KEYS = {
+  masters: 'golf_masters_tournament_winner',
+  pga: 'golf_pga_championship_winner',
+  us_open: 'golf_us_open_winner',
+  open: 'golf_the_open_championship_winner',
+};
 
 export default function Admin({ tournament, golfers, refreshAll }) {
   const [tab, setTab] = useState(tournament ? 'manage' : 'create');
@@ -236,19 +246,42 @@ function NextMajorCard({ refreshAll }) {
 function TierManager({ tournament, golfers, refreshAll }) {
   const [draft, setDraft] = useState(golfers || []);
   const [bulkText, setBulkText] = useState('');
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState('');
+
+  const liveOddsSportKey = LIVE_ODDS_SPORT_KEYS[tournament.eventType];
+
+  function importList(rawGolfers) {
+    const withIds = rawGolfers.map((g, i) => ({
+      id: `g${i + 1}`, name: g.name, odds: g.odds, tier: 1, strokesToPar: 0, status: 'playing',
+    }));
+    setDraft(autoTierByOdds(withIds));
+  }
 
   function importBulk() {
     // Format: "Player Name, +450" per line
     const lines = bulkText.split('\n').map((l) => l.trim()).filter(Boolean);
-    const list = lines.map((line, i) => {
+    const list = lines.map((line) => {
       const [name, odds] = line.split(',').map((s) => s.trim());
-      return { id: `g${i + 1}`, name, odds, tier: 1, strokesToPar: 0, status: 'playing' };
+      return { name, odds };
     });
-    // Auto-tier by odds: split into 6 roughly-equal buckets
-    list.sort((a, b) => oddsToNum(a.odds) - oddsToNum(b.odds));
-    const perTier = Math.ceil(list.length / 6);
-    list.forEach((g, i) => (g.tier = Math.min(6, Math.floor(i / perTier) + 1)));
-    setDraft(list);
+    importList(list);
+  }
+
+  async function fetchLiveOdds() {
+    setFetching(true);
+    setFetchError('');
+    try {
+      const res = await fetch(`/api/fetch-golf-odds?eventType=${tournament.eventType}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      if (!data.golfers?.length) throw new Error('No odds returned yet — the board may not be posted for this event.');
+      importList(data.golfers);
+    } catch (err) {
+      setFetchError(String(err.message || err));
+    } finally {
+      setFetching(false);
+    }
   }
 
   function move(id, dir) {
@@ -268,16 +301,31 @@ function TierManager({ tournament, golfers, refreshAll }) {
   return (
     <div className="space-y-4">
       {!draft.length && (
-        <Card className="p-4 space-y-3">
-          <div className="text-sm">Paste the field — one golfer per line, `Name, +odds`:</div>
-          <textarea
-            className="w-full h-40 bg-bg border border-border rounded-lg p-3 font-mono text-sm"
-            value={bulkText}
-            onChange={(e) => setBulkText(e.target.value)}
-            placeholder={`Scottie Scheffler, +450\nRory McIlroy, +600\n...`}
-          />
-          <Button onClick={importBulk}>Import + auto-tier</Button>
-        </Card>
+        <>
+          {liveOddsSportKey && (
+            <Card className="p-4 space-y-3">
+              <div className="text-sm">
+                Live odds are available for this event type via The Odds API.
+              </div>
+              <Button onClick={fetchLiveOdds} disabled={fetching}>
+                {fetching ? 'Fetching…' : 'Fetch live odds + auto-tier'}
+              </Button>
+              {fetchError && <div className="text-xs text-danger">{fetchError}</div>}
+            </Card>
+          )}
+          <Card className="p-4 space-y-3">
+            <div className="text-sm">
+              {liveOddsSportKey ? 'Or paste the field manually' : 'Paste the field'} — one golfer per line, `Name, +odds`:
+            </div>
+            <textarea
+              className="w-full h-40 bg-bg border border-border rounded-lg p-3 font-mono text-sm"
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+              placeholder={`Scottie Scheffler, +450\nRory McIlroy, +600\n...`}
+            />
+            <Button onClick={importBulk}>Import + auto-tier</Button>
+          </Card>
+        </>
       )}
 
       {!!draft.length && (
@@ -530,10 +578,4 @@ function Field({ label, children }) {
       {children}
     </label>
   );
-}
-
-function oddsToNum(odds) {
-  if (!odds) return 99999;
-  const n = parseInt(String(odds).replace(/[+]/, ''), 10);
-  return Number.isFinite(n) ? n : 99999;
 }
