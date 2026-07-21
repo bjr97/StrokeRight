@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { storage, keys } from '../lib/storage.js';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
-import { buildMajors, getDefendingChampions, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, trophyCaseEmojis } from '../lib/majors.js';
+import { buildMajors, withUniqueHighlights, getDefendingChampions, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, trophyCaseEmojis } from '../lib/majors.js';
 import { eventTypeLabel } from '../lib/eventTypes.js';
 import { fmtDate } from '../lib/format.js';
 import { Card, Stat, Button, TrophyCase, TrophyCaseModal, TierDot, StatusBadge, fmtToPar } from '../components/ui.jsx';
@@ -21,8 +21,11 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   const countdownAnchorDate = nextMajor?.deadline || tournament?.startDate || tournament?.deadline;
 
   const majors = useMemo(() => buildMajors(), [tournament, entries]);
+  // Shown side by side, so each of these 4 gets a DIFFERENT highlight fact
+  // where possible — a fact already claimed by an earlier (more recent)
+  // card is skipped in favor of that major's next-best qualifying fact.
   const recentMajors = useMemo(
-    () => [...majors].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4),
+    () => withUniqueHighlights([...majors].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4)),
     [majors]
   );
   const lastMajorOverall = recentMajors[0] || null;

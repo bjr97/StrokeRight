@@ -63,9 +63,33 @@ export function buildMajors() {
   // Highlights are computed in a second pass, once every major is assembled —
   // "defending champ repeats" needs to look sideways at prior editions of the
   // same event type, which isn't available yet mid-construction above.
+  // Every candidate fact that applies is kept (not just the best one) so a
+  // consumer showing several majors side by side (the Home page) can assign
+  // each one a DIFFERENT fact rather than have the same one win repeatedly
+  // for majors that happen to share more than one qualifying fact.
   const all = [...full, ...summary];
-  for (const major of all) major.highlight = computeHighlight(major, all);
+  for (const major of all) {
+    major.highlightCandidates = computeHighlightCandidates(major, all);
+    major.highlight = major.highlightCandidates[0]?.text ?? null;
+  }
   return all;
+}
+
+// Greedily assigns each major in `list` (in order) the highest-priority
+// highlight fact whose key hasn't already been claimed by an earlier major
+// in the same list — so a set of majors shown together never repeats the
+// same fact type twice, even when several of them structurally qualify for
+// the same top fact. A major falls back to null (no highlight shown, rather
+// than a forced duplicate) if every fact it qualifies for is already taken.
+// Returns new major objects; doesn't mutate the input.
+export function withUniqueHighlights(list) {
+  const used = new Set();
+  return list.map((m) => {
+    const candidates = m.highlightCandidates || [];
+    const pick = candidates.find((c) => !used.has(c.key));
+    if (pick) used.add(pick.key);
+    return { ...m, highlight: pick ? pick.text : null };
+  });
 }
 
 // Names of the stroker(s) who won the most recent PAST major of the given
@@ -95,18 +119,22 @@ export function getDefendingChampions({ eventType, anchorDate } = {}, majorsList
   return mostRecent.winner.split(' & ').map((s) => s.trim()).filter(Boolean);
 }
 
-// One auto-computed "anything interesting" line per major. Every candidate
-// fact that applies is checked, in priority order (rarest/most notable
-// first) — the first match wins, so a major with several qualifying facts
-// always shows its most interesting one rather than whichever was checked
-// first. Returns null if nothing stands out (or there isn't enough data to
-// tell, e.g. a summary-only legacy major). `allMajors` is buildMajors()'s
-// own in-progress list, needed for the "defending champ" lookback.
-function computeHighlight(m, allMajors) {
+// Every "anything interesting" fact that applies to a major, in priority
+// order (rarest/most notable first) — unlike a single pick-the-first-match
+// function, this collects ALL qualifying facts so a caller juggling several
+// majors at once (Home page) can skip ones already used elsewhere and fall
+// back to this major's next-best fact instead of forcing a duplicate.
+// `allMajors` is buildMajors()'s own in-progress list, needed for the
+// "defending champ" lookback. Each candidate is { key, text }; `key`
+// identifies the fact TYPE (for de-duping), `text` is the display string.
+function computeHighlightCandidates(m, allMajors) {
+  const candidates = [];
   const winners = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
 
   // Rarest: a tie for the win.
-  if (winners.length > 1) return `Tie for the win between ${winners.join(' & ')}`;
+  if (winners.length > 1) {
+    candidates.push({ key: 'tie', text: `Tie for the win between ${winners.join(' & ')}` });
+  }
 
   // Everything below needs the winning entry's actual picks, which only
   // exist for full-data majors (ranked/scored come straight from live entries).
@@ -114,21 +142,27 @@ function computeHighlight(m, allMajors) {
     ? m.ranked.filter((r) => r.rank === m.ranked[0].rank)
     : [];
 
-  // Defending champion repeats.
+  // Defending champion repeats (only meaningful for a single, undisputed winner).
   if (winners.length === 1 && m.date && m.eventType && m.eventType !== 'other') {
     const defenders = getDefendingChampions({ eventType: m.eventType, anchorDate: m.date }, allMajors);
     if (defenders.includes(winners[0])) {
       const priorName = allMajors
         .filter((o) => o !== m && o.eventType === m.eventType && o.date && new Date(o.date) < new Date(m.date))
         .sort((a, b) => new Date(b.date) - new Date(a.date))[0]?.name;
-      return `${winners[0]} defended their title${priorName ? ` from ${priorName}` : ''}`;
+      candidates.push({
+        key: 'defendingChamp',
+        text: `${winners[0]} defended their title${priorName ? ` from ${priorName}` : ''}`,
+      });
     }
   }
 
   // Down-tier gambit paid off — winner skipped a tier and doubled up a lower one.
   // (> 0, not just non-null: some legacy rows store 0 rather than null for "no skip".)
   if (winningRows.length === 1 && winningRows[0].entry.downTierSkipped > 0) {
-    return `Won it after a down-tier gambit — skipped Tier ${winningRows[0].entry.downTierSkipped} to double up below it`;
+    candidates.push({
+      key: 'downTierGambit',
+      text: `Won it after a down-tier gambit — skipped Tier ${winningRows[0].entry.downTierSkipped} to double up below it`,
+    });
   }
 
   // Cut-line survivor — winner won despite a missed-cut pick dragging them down.
@@ -140,10 +174,12 @@ function computeHighlight(m, allMajors) {
       }
     }
     if (missedCutNames.size === 1) {
-      return `Won it despite ${[...missedCutNames][0]} missing the cut`;
-    }
-    if (missedCutNames.size > 1) {
-      return `Won it despite ${missedCutNames.size} golfers on the team missing the cut`;
+      candidates.push({ key: 'cutLineSurvivor', text: `Won it despite ${[...missedCutNames][0]} missing the cut` });
+    } else if (missedCutNames.size > 1) {
+      candidates.push({
+        key: 'cutLineSurvivor',
+        text: `Won it despite ${missedCutNames.size} golfers on the team missing the cut`,
+      });
     }
   }
 
@@ -153,7 +189,10 @@ function computeHighlight(m, allMajors) {
     if (oddsNums.length) {
       const avg = oddsNums.reduce((a, b) => a + b, 0) / oddsNums.length;
       if (avg >= UNDERDOG_TEAM_AVG_THRESHOLD) {
-        return `Full squad of underdogs — averaged +${Math.round(avg).toLocaleString()} odds across all 6 picks`;
+        candidates.push({
+          key: 'squadOfUnderdogs',
+          text: `Full squad of underdogs — averaged +${Math.round(avg).toLocaleString()} odds across all 6 picks`,
+        });
       }
     }
   }
@@ -169,7 +208,7 @@ function computeHighlight(m, allMajors) {
         }
       }
     }
-    if (longshot) return `Rode a longshot pick: ${longshot.name} (${longshot.odds})`;
+    if (longshot) candidates.push({ key: 'longshot', text: `Rode a longshot pick: ${longshot.name} (${longshot.odds})` });
   }
 
   // Most common: how close/lopsided the margin was.
@@ -177,12 +216,15 @@ function computeHighlight(m, allMajors) {
     const totals = [...new Set(m.ranked.map((r) => r.total))].sort((a, b) => b - a);
     if (totals.length >= 2) {
       const margin = totals[0] - totals[1];
-      if (margin <= NAIL_BITER_MARGIN) return `Nail-biter — won by just ${margin} pt${margin === 1 ? '' : 's'}`;
-      if (margin >= RUNAWAY_MARGIN) return `Runaway win — margin of ${margin} pts`;
+      if (margin <= NAIL_BITER_MARGIN) {
+        candidates.push({ key: 'margin', text: `Nail-biter — won by just ${margin} pt${margin === 1 ? '' : 's'}` });
+      } else if (margin >= RUNAWAY_MARGIN) {
+        candidates.push({ key: 'margin', text: `Runaway win — margin of ${margin} pts` });
+      }
     }
   }
 
-  return null;
+  return candidates;
 }
 
 // ─── Homepage "pool records" ────────────────────────────────────────────
