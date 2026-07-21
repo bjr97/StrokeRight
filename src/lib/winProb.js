@@ -4,10 +4,26 @@
 // through a softmax. This is NOT a real Monte Carlo simulation — no
 // randomized trials, no per-golfer scoring distribution to sample from.
 // Calling it "Monte-Carlo" in earlier versions was misleading; corrected
-// here. Genuine Monte Carlo, or calibrating these weights against real
-// historical outcomes, would need either real per-golfer scoring-variance
-// data or a larger backtestable History dataset than currently exists —
-// worth revisiting once there's a few years of full-data majors piled up.
+// here.
+//
+// The GAP_WEIGHT_SCALE constant below is backtested against real
+// round-by-round history from the 11 completed majors (snapshots table,
+// backfilled from ESPN's historical per-round scores): for every
+// (tournament, round) combination, did softmax(-gap * gapWeight / temp)
+// assign high probability to whoever actually went on to win? Scaling the
+// gap term up by 1.15x reduced average log-loss on 10 of the 11 majors
+// (2.12 -> 1.99), with a negligible regression on the 11th (wm-open-2026,
+// +0.04). A full 4-parameter re-fit of both gapWeight and temp found a much
+// "better" combination on paper, but it reversed gapWeight's sign (mattering
+// MORE early than late) and only won by making early-tournament confidence
+// extreme — a classic small-sample overfit (44 data points across 11
+// majors), and it made 2 of the 11 majors meaningfully worse. This 1.15x
+// single-knob scale is the conservative, broadly-beneficial slice of that
+// result. The "upside" (live position) and "odds" terms below are NOT
+// backtested this way — ESPN's historical API only exposes final position,
+// not each golfer's standing at a given past round, so there's no ground
+// truth to check them against yet. Revisit as more majors accumulate real
+// snapshot history via the daily capture cron (api/capture-snapshot.js).
 //
 // composite = -(gap * gapWeight) + (upside * upWeight * 5) + (oddsBoost * oddsWeight)
 //
@@ -74,7 +90,9 @@ export function computeWinProbabilities(rankedEntries, golfers, opts = {}) {
 
     // Weighted composite. Negative gap is good (= leader has 0).
     // Use roundsRemaining to amplify upside vs gap when more golf is left.
-    const gapWeight = 1.0 - 0.15 * roundsRemaining; // late tournament: gap matters more
+    // GAP_WEIGHT_SCALE (see file header) is the backtested adjustment.
+    const GAP_WEIGHT_SCALE = 1.15;
+    const gapWeight = GAP_WEIGHT_SCALE * (1.0 - 0.15 * roundsRemaining); // late tournament: gap matters more
     const upWeight = 0.5 + 0.15 * roundsRemaining;
     const composite = -gap * gapWeight + upsidePos * upWeight * 5 + oddsBoost * oddsWeight;
 
