@@ -55,13 +55,34 @@ export default function Admin({ tournament, golfers, refreshAll }) {
   );
 }
 
+// 11:59 PM local time, the calendar day before `startDate` — datetime-local
+// format (no seconds/timezone) to match how this field is stored elsewhere.
+function computeDeadline(startDate) {
+  if (!startDate) return '';
+  const d = new Date(`${startDate}T00:00:00`); // local midnight, not UTC — avoids a day-shift
+  d.setDate(d.getDate() - 1);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T23:59`;
+}
+
+function formatDeadlinePreview(deadline) {
+  if (!deadline) return '';
+  const d = new Date(deadline);
+  const datePart = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const timePart = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return `${datePart} · ${timePart}`;
+}
+
 function CreateTournament({ refreshAll }) {
   const [form, setForm] = useState({
-    name: '', startDate: '', deadline: '', poolCode: '', course: '', eventType: 'other',
+    name: '', startDate: '', poolCode: '', course: '', eventType: 'other',
   });
 
   const nameLocked = form.eventType !== 'other';
   const computedName = autoTournamentName(form.eventType, form.startDate);
+  const computedDeadline = computeDeadline(form.startDate);
 
   async function save() {
     if (nameLocked && !computedName) {
@@ -69,13 +90,14 @@ function CreateTournament({ refreshAll }) {
     }
     const name = nameLocked ? computedName : form.name;
     if (!name || !form.poolCode) return alertAsync('Name and pool code are required');
+    if (!computedDeadline) return alertAsync('Pick a start date first so the deadline can be computed.');
     const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) + '-' + Date.now().toString(36);
     const t = {
       id,
       name,
       course: form.course,
       startDate: form.startDate,
-      deadline: form.deadline,
+      deadline: computedDeadline,
       poolCode: form.poolCode,
       entryFee: 10,
       tieredPenaltyEnabled: false,
@@ -95,10 +117,14 @@ function CreateTournament({ refreshAll }) {
   return (
     <Card className="p-5 space-y-4">
       <Field label="Event type"><Select value={form.eventType} onChange={(v) => setForm({ ...form, eventType: v })} options={EVENT_TYPES} className="w-full" /></Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Start date"><Input type="date" value={form.startDate} onChange={(v) => setForm({ ...form, startDate: v })} /></Field>
-        <Field label="Deadline (Wed 11:59 pm)"><Input type="datetime-local" value={form.deadline} onChange={(v) => setForm({ ...form, deadline: v })} /></Field>
-      </div>
+      <Field label="Start date"><Input type="date" value={form.startDate} onChange={(v) => setForm({ ...form, startDate: v })} /></Field>
+      <Field label="Picks deadline (auto: 11:59 PM the day before start)">
+        <div className="px-3 py-2 bg-bg border border-border rounded-lg text-sm">
+          {computedDeadline
+            ? formatDeadlinePreview(computedDeadline)
+            : <span className="text-muted">Set a start date above to compute the deadline</span>}
+        </div>
+      </Field>
       <Field label="Tournament name">
         {nameLocked ? (
           <div className="px-3 py-2 bg-bg border border-border rounded-lg text-sm">
