@@ -14,6 +14,18 @@ const TABS = [
   { key: 'fun', label: 'Fun stats' },
 ];
 
+// "2nd", "T3", etc. — prefixes a T when someone else shares that rank in the
+// same major, matching the tie-handling convention used everywhere else.
+function formatRank(rank, rankedList) {
+  const tied = (rankedList || []).filter((x) => x.rank === rank).length > 1;
+  const mod100 = rank % 100;
+  const suffix = mod100 >= 11 && mod100 <= 13 ? 'th'
+    : rank % 10 === 1 ? 'st'
+    : rank % 10 === 2 ? 'nd'
+    : rank % 10 === 3 ? 'rd' : 'th';
+  return `${tied ? 'T' : ''}${rank}${suffix}`;
+}
+
 export default function History({ session, refreshAll }) {
   const [tab, setTab] = useState('majors');
   const [majorSort, setMajorSort] = useState('year');
@@ -21,6 +33,7 @@ export default function History({ session, refreshAll }) {
   const [expandedId, setExpandedId] = useState(null);
   const [editing, setEditing] = useState(null);
   const [trophyFor, setTrophyFor] = useState(null);
+  const [podiumFor, setPodiumFor] = useState(null); // { name, finishes } or null
 
   const strokerWins = getStrokerWins(); // cheap; always fresh (unaffected by History's own filters — a trophy case is a fixed fact)
   const [eventTypeFilter, setEventTypeFilter] = useState('all');
@@ -101,7 +114,7 @@ export default function History({ session, refreshAll }) {
       if (!major) continue;
 
       for (const e of tEntries) {
-        const rec = full.get(e.name) || { entries: 0, feesPaid: 0, winsFull: 0, podiumOnly: 0, moneyFull: 0, oddsSum: 0, oddsCount: 0 };
+        const rec = full.get(e.name) || { entries: 0, feesPaid: 0, winsFull: 0, podiumOnly: 0, moneyFull: 0, oddsSum: 0, oddsCount: 0, podiumFinishes: [] };
         rec.entries += 1;
         rec.feesPaid += t.entryFee || 0;
         full.set(e.name, rec);
@@ -165,8 +178,19 @@ export default function History({ session, refreshAll }) {
         const rec = full.get(r.entry.name);
         if (!rec) continue;
         rec.moneyFull += payout;
-        if (r.rank === 1) rec.winsFull += 1;
-        else rec.podiumOnly += 1;
+        if (r.rank === 1) {
+          rec.winsFull += 1;
+        } else {
+          rec.podiumOnly += 1;
+          rec.podiumFinishes.push({
+            major: major.name,
+            date: major.date,
+            eventType: major.eventType,
+            rank: formatRank(r.rank, major.ranked),
+            payout,
+            points: r.total,
+          });
+        }
       }
     }
 
@@ -182,6 +206,7 @@ export default function History({ session, refreshAll }) {
         wins: l.wins + (f?.winsFull || 0),
         moneyWon: l.moneyWon + (f?.moneyFull || 0),
         podiumOnly: f ? f.podiumOnly : null,
+        podiumFinishes: f ? f.podiumFinishes : [],
         entries: f ? f.entries : null,
         feesPaid: f ? f.feesPaid : null,
         roi,
@@ -418,7 +443,7 @@ export default function History({ session, refreshAll }) {
 
       {tab === 'strokers' && (
         <div className="space-y-2">
-          <StrokerTable rows={sortedStrokers} sort={gSort} onSort={toggleGSort} strokerWins={strokerWins} onOpenTrophy={setTrophyFor} />
+          <StrokerTable rows={sortedStrokers} sort={gSort} onSort={toggleGSort} strokerWins={strokerWins} onOpenTrophy={setTrophyFor} onOpenPodium={setPodiumFor} />
           <p className="text-xs text-muted">
             $ Won includes paid finishes that weren't wins (e.g. a 2nd place that cashed a payout).
             Entries / $ Spent / ROI / Paid-no-win only reflect majors with full data. ROI is net return —
@@ -466,6 +491,37 @@ export default function History({ session, refreshAll }) {
       {trophyFor && (
         <TrophyCaseModal name={trophyFor} wins={strokerWins.get(trophyFor) || []} onClose={() => setTrophyFor(null)} />
       )}
+      {podiumFor && (
+        <PodiumFinishesModal name={podiumFor.name} finishes={podiumFor.finishes} onClose={() => setPodiumFor(null)} />
+      )}
+    </div>
+  );
+}
+
+function PodiumFinishesModal({ name, finishes, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-medium">{name} — paid, no win</div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        {!finishes?.length ? (
+          <div className="text-sm text-muted">No paid-no-win finishes yet.</div>
+        ) : (
+          <div className="space-y-2">
+            {finishes.map((f, i) => (
+              <div key={i} className="flex items-center justify-between text-sm py-1 border-b border-border last:border-b-0">
+                <div className="min-w-0">
+                  <div className="text-text truncate">{f.major}</div>
+                  <div className="text-xs text-muted">{fmtDate(f.date)} · {f.rank} · {f.points >= 0 ? '+' : ''}{f.points} pts</div>
+                </div>
+                <div className="text-accent font-medium tabular-nums shrink-0 ml-3">{fm(f.payout)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -547,7 +603,7 @@ function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
   );
 }
 
-function StrokerTable({ rows, sort, onSort, strokerWins, onOpenTrophy }) {
+function StrokerTable({ rows, sort, onSort, strokerWins, onOpenTrophy, onOpenPodium }) {
   const cols = [
     { key: 'name', label: 'Stroker', left: true },
     { key: 'wins', label: 'Wins' },
@@ -585,7 +641,16 @@ function StrokerTable({ rows, sort, onSort, strokerWins, onOpenTrophy }) {
                   <TrophyCase emojis={String(r.wins)} onClick={() => onOpenTrophy(r.name)} />
                 ) : r.wins}
               </td>
-              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-warn">{r.podiumOnly ?? '—'}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-warn">
+                {r.podiumOnly > 0 ? (
+                  <button
+                    onClick={() => onOpenPodium({ name: r.name, finishes: r.podiumFinishes })}
+                    className="underline decoration-dotted underline-offset-2 hover:opacity-80"
+                  >
+                    {r.podiumOnly}
+                  </button>
+                ) : (r.podiumOnly ?? '—')}
+              </td>
               <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-accent whitespace-nowrap">{fm(r.moneyWon)}</td>
               <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.entries ?? '—'}</td>
               <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted whitespace-nowrap">{r.feesPaid != null ? fm(r.feesPaid) : '—'}</td>
