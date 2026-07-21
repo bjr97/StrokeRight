@@ -246,27 +246,29 @@ export function getMostDecorated(majors) {
 // Walks a chronologically-sorted list of majors and finds, per stroker, the
 // longest run of CONSECUTIVE majors (within that list) they won. A tied win
 // counts as a win for everyone in the tie, so a co-championship extends
-// everyone's streak, not just one person's.
+// everyone's streak, not just one person's. Tracks the actual majors in the
+// best streak (not just its length) so a caller can show what it consisted of.
 function longestConsecutiveWinStreak(sortedMajors) {
-  const current = new Map(); // name -> running streak length
-  const best = new Map();    // name -> best streak length seen
+  const current = new Map(); // name -> running list of majors in the current streak
+  const best = new Map();    // name -> majors list of the best streak seen
   for (const m of sortedMajors) {
     const winners = new Set((m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean));
     for (const name of new Set([...current.keys(), ...winners])) {
       if (winners.has(name)) {
-        const next = (current.get(name) || 0) + 1;
-        current.set(name, next);
-        if (next > (best.get(name) || 0)) best.set(name, next);
+        const list = [...(current.get(name) || []), m];
+        current.set(name, list);
+        if (list.length > (best.get(name)?.length || 0)) best.set(name, list);
       } else {
-        current.set(name, 0);
+        current.set(name, []);
       }
     }
   }
   if (!best.size) return null;
-  const max = Math.max(...best.values());
+  const max = Math.max(...[...best.values()].map((l) => l.length));
   if (max < 2) return null; // a "streak" of 1 isn't a streak
-  const names = [...best.entries()].filter(([, c]) => c === max).map(([n]) => n);
-  return { names, length: max };
+  const names = [...best.entries()].filter(([, l]) => l.length === max).map(([n]) => n);
+  const majors = best.get(names[0]).map((m) => ({ name: m.name, date: m.date, eventType: m.eventType }));
+  return { names, length: max, majors };
 }
 
 /**
@@ -300,13 +302,15 @@ export function getLongestStreaks(majors) {
   return { overall, sameEvent };
 }
 
-const GRAND_SLAM_TYPES = ['masters', 'us_open', 'pga', 'open'];
+export const GRAND_SLAM_TYPES = ['masters', 'us_open', 'pga', 'open'];
 
 /**
  * Career grand-slam progress: how many of the 4 real majors (Masters, US
  * Open, PGA, Open — WM Open and Other don't count) each stroker has won at
  * least once, ever. Returns every stroker with at least one grand-slam-type
- * win (sorted by count desc) plus the leader(s) at the max count.
+ * win (sorted by count desc) plus the leader(s) at the max count. Each row
+ * includes `types`, the actual event types won, so a caller can show which
+ * of the 4 are done vs. still missing (not just the count).
  */
 export function getGrandSlamProgress(majors) {
   const wonTypes = new Map(); // name -> Set of eventTypes won
@@ -322,7 +326,10 @@ export function getGrandSlamProgress(majors) {
   }
 
   const all = [...wonTypes.entries()]
-    .map(([name, set]) => ({ name, count: set.size, pct: Math.round((set.size / GRAND_SLAM_TYPES.length) * 100) }))
+    .map(([name, set]) => ({
+      name, count: set.size, pct: Math.round((set.size / GRAND_SLAM_TYPES.length) * 100),
+      types: [...set],
+    }))
     .sort((a, b) => b.count - a.count);
 
   if (!all.length) return { leaders: [], all };
