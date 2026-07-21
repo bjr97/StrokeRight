@@ -86,12 +86,12 @@ export default function Admin({ tournament, refreshAll }) {
       {tab === 'edit' && selectedTournament && (
         <div className="space-y-6">
           <div>
-            <h2 className="text-sm font-semibold text-text mb-2">Tiers</h2>
-            <TierManager key={`${selectedTournament.id}-tiers`} tournament={selectedTournament} golfers={selectedGolfers} refreshAll={refreshAll} />
-          </div>
-          <div>
             <h2 className="text-sm font-semibold text-text mb-2">Live controls</h2>
             <LiveControls key={`${selectedTournament.id}-live`} tournament={selectedTournament} golfers={selectedGolfers} refreshAll={refreshAll} />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-text mb-2">Tiers</h2>
+            <TierManager key={`${selectedTournament.id}-tiers`} tournament={selectedTournament} golfers={selectedGolfers} refreshAll={refreshAll} />
           </div>
         </div>
       )}
