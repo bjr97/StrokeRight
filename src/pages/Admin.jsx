@@ -252,19 +252,41 @@ const STATUS_OPTIONS = [
   { value: 'completed', label: 'Completed', activeClass: 'bg-accent/15 text-accent border-accent/30' },
 ];
 
-// Group order for the "All" view — upcoming/live surfaced above completed,
-// matching the lifecycle progression rather than however listTournaments()
-// happens to return them.
-const STATUS_SORT_RANK = { setup: 0, live: 1, completed: 2 };
+const SORT_OPTIONS = [
+  { value: 'date', label: 'Newest' },
+  { value: 'year', label: 'Year' },
+  { value: 'event', label: 'Event' },
+];
+
+function tournamentYear(t) {
+  return t.startDate ? parseInt(t.startDate.slice(0, 4), 10) || 0 : 0;
+}
+
+// 'date'  — strict chronological order, newest first (the default).
+// 'year'  — grouped by year (newest year first), same-year events tie-broken
+//           alphabetically by event type.
+// 'event' — grouped alphabetically by event type, newest year first within
+//           each group (so every "Masters" across years sits together).
+function sortTournaments(list, sortBy) {
+  const sorted = [...list];
+  if (sortBy === 'year') {
+    sorted.sort((a, b) => tournamentYear(b) - tournamentYear(a) || eventTypeLabel(a.eventType).localeCompare(eventTypeLabel(b.eventType)));
+  } else if (sortBy === 'event') {
+    sorted.sort((a, b) => eventTypeLabel(a.eventType).localeCompare(eventTypeLabel(b.eventType)) || tournamentYear(b) - tournamentYear(a));
+  } else {
+    sorted.sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
+  }
+  return sorted;
+}
 
 function ManageTournaments({ active, refreshAll, onEdit }) {
   const all = listTournaments();
   const activeId = getActiveTournamentId();
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('date');
 
-  const visible = statusFilter === 'all'
-    ? [...all].sort((a, b) => (STATUS_SORT_RANK[a.status || 'setup'] ?? 0) - (STATUS_SORT_RANK[b.status || 'setup'] ?? 0))
-    : all.filter((t) => (t.status || 'setup') === statusFilter);
+  const filtered = statusFilter === 'all' ? all : all.filter((t) => (t.status || 'setup') === statusFilter);
+  const visible = sortTournaments(filtered, sortBy);
 
   // A quick label toggle — not the same ceremony as Live Controls' "Mark
   // tournament complete" (which also computes final standings and can file a
@@ -305,13 +327,28 @@ function ManageTournaments({ active, refreshAll, onEdit }) {
     <div className="space-y-2">
       <NextMajorCard refreshAll={refreshAll} />
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 flex-wrap">
         {[{ value: 'all', label: 'All' }, ...STATUS_OPTIONS].map((s) => (
           <button
             key={s.value}
             onClick={() => setStatusFilter(s.value)}
             className={`px-2.5 py-1 rounded-lg text-xs border transition ${
               statusFilter === s.value ? 'bg-accent text-bg border-accent' : 'border-border text-muted hover:text-text'
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="text-xs text-muted mr-1">Sort:</span>
+        {SORT_OPTIONS.map((s) => (
+          <button
+            key={s.value}
+            onClick={() => setSortBy(s.value)}
+            className={`px-2.5 py-1 rounded-lg text-xs border transition ${
+              sortBy === s.value ? 'bg-accent text-bg border-accent' : 'border-border text-muted hover:text-text'
             }`}
           >
             {s.label}
