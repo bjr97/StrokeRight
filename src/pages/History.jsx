@@ -101,13 +101,15 @@ export default function History({ session, refreshAll }) {
   // Entries / $ spent / ROI / podiums / golfer picks: only from full-data
   // majors — that's the only place we know every stroker's entry and every
   // paid position, not just the winner's.
-  const { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows } = useMemo(() => {
+  const { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut } = useMemo(() => {
     const legacy = new Map(); // name -> { wins, moneyWon } — from summary-only majors
     const full = new Map();   // name -> { entries, feesPaid, winsFull, podiumOnly, moneyFull }
     const golferCounts = new Map();
     const golferWinCounts = new Map();  // name -> { count, tier } — winning-team appearances
     const golferScoreSum = new Map();   // name -> { sum, majorsCount, tier } — real strokesToPar, once per event
+    const golferCutTally = new Map();   // name -> { madeCut, missedCut, tier } — once per event, like golferScoreSum
     let longestShot = null; // { name, odds, oddsNum } — worst odds ever actually picked
+    let biggestFavoriteToMissCut = null; // { name, odds, oddsNum, major } — shortest odds among picks that still missed the cut
     let totalPicksLogged = 0;
 
     for (const m of majors) {
@@ -182,12 +184,29 @@ export default function History({ session, refreshAll }) {
       for (const e of tEntries) for (const gid of e.golferIds || []) pickedIdsThisMajor.add(gid);
       for (const gid of pickedIdsThisMajor) {
         const g = golferLookup.get(gid);
-        if (!g || typeof g.strokesToPar !== 'number') continue;
-        const srec = golferScoreSum.get(g.name) || { sum: 0, majorsCount: 0, tier: g.tier };
-        srec.sum += g.strokesToPar;
-        srec.majorsCount += 1;
-        srec.tier = g.tier;
-        golferScoreSum.set(g.name, srec);
+        if (!g) continue;
+        if (typeof g.strokesToPar === 'number') {
+          const srec = golferScoreSum.get(g.name) || { sum: 0, majorsCount: 0, tier: g.tier };
+          srec.sum += g.strokesToPar;
+          srec.majorsCount += 1;
+          srec.tier = g.tier;
+          golferScoreSum.set(g.name, srec);
+        }
+        // Cut tally + "biggest favorite to miss the cut" — both keyed off
+        // made_cut/missed_cut only (withdrawn/playing don't answer either
+        // question), once per golfer per major regardless of pick count.
+        if (g.status === 'made_cut' || g.status === 'missed_cut') {
+          const crec = golferCutTally.get(g.name) || { madeCut: 0, missedCut: 0, tier: g.tier };
+          if (g.status === 'made_cut') crec.madeCut += 1; else crec.missedCut += 1;
+          crec.tier = g.tier;
+          golferCutTally.set(g.name, crec);
+        }
+        if (g.status === 'missed_cut') {
+          const oddsNum = oddsToNum(g.odds);
+          if (oddsNum >= 0 && (!biggestFavoriteToMissCut || oddsNum < biggestFavoriteToMissCut.oddsNum)) {
+            biggestFavoriteToMissCut = { name: g.name, odds: g.odds, oddsNum, major: major.name };
+          }
+        }
       }
 
       // Every entry that actually got paid — not just the winning rank.
@@ -250,7 +269,7 @@ export default function History({ session, refreshAll }) {
       .sort((a, b) => a.sum - b.sum)
       .slice(0, 15);
 
-    return { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows };
+    return { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut };
   }, [majors, allTournaments]);
 
   const sortedStrokers = useMemo(() => {
@@ -351,16 +370,49 @@ export default function History({ session, refreshAll }) {
     // counts each co-winner separately, same convention used elsewhere),
     // how many of its 6 golfers missed the cut. Only full-data majors carry
     // per-golfer status, so summary-only history rows are skipped.
+    // Several other winning-team stats piggyback on the same pass: whether
+    // the real champion was on the roster, whether they took a down-tier
+    // gambit, and (for majors with the rule on) whether they ate any tiered
+    // cut-line penalty. League-wide MC average uses EVERY entry, not just
+    // winners, as a baseline to compare the winners-only distribution against.
     const mcBuckets = { '0': 0, '1': 0, '2': 0, '3+': 0 };
     let mcTotal = 0;
+    let calledChampionCount = 0, calledChampionTotal = 0;
+    let downTierGambitCount = 0, downTierGambitTotal = 0;
+    let tieredPenaltyExposedCount = 0, tieredPenaltyExposedTotal = 0;
+    let leagueMcSum = 0, leagueEntryCount = 0;
+    const championTierCounts = {};
     for (const m of majors) {
       if (!m.fullData || !m.ranked?.length) continue;
+
+      if (m.championTier != null) {
+        championTierCounts[m.championTier] = (championTierCounts[m.championTier] || 0) + 1;
+      }
+
+      for (const row of m.ranked) {
+        leagueMcSum += row.scored.filter((s) => s.golfer.status === 'missed_cut').length;
+        leagueEntryCount++;
+      }
+
       const winningRows = m.ranked.filter((r) => r.rank === m.ranked[0].rank);
       for (const row of winningRows) {
         const mc = row.scored.filter((s) => s.golfer.status === 'missed_cut').length;
         const key = mc >= 3 ? '3+' : String(mc);
         mcBuckets[key]++;
         mcTotal++;
+
+        if (m.champion) {
+          calledChampionTotal++;
+          if (row.scored.some((s) => s.golfer.name === m.champion)) calledChampionCount++;
+        }
+
+        downTierGambitTotal++;
+        if (row.entry.downTierSkipped > 0) downTierGambitCount++;
+
+        if (m.tieredPenaltyEnabled) {
+          tieredPenaltyExposedTotal++;
+          if (row.scored.some((s) => s.breakdown.tieredPenalty < 0)) tieredPenaltyExposedCount++;
+        }
       }
     }
     const mcDistribution = mcTotal
@@ -370,30 +422,37 @@ export default function History({ session, refreshAll }) {
           pct: Math.round((mcBuckets[key] / mcTotal) * 100),
         })).filter((d) => d.value > 0)
       : [];
-
-    // Did the winning team actually have the real tournament champion on
-    // its roster? Ties count each co-winner separately, same convention as
-    // the MC distribution above. Only counts majors where the admin has
-    // set a champion golfer (all 11 to date, but older/manual records
-    // could lack one).
-    let calledChampionCount = 0, calledChampionTotal = 0;
-    for (const m of majors) {
-      if (!m.fullData || !m.ranked?.length || !m.champion) continue;
-      const winningRows = m.ranked.filter((r) => r.rank === m.ranked[0].rank);
-      for (const row of winningRows) {
-        calledChampionTotal++;
-        if (row.scored.some((s) => s.golfer.name === m.champion)) calledChampionCount++;
-      }
-    }
     const calledChampionPct = calledChampionTotal ? Math.round((calledChampionCount / calledChampionTotal) * 100) : null;
+    const downTierGambitPct = downTierGambitTotal ? Math.round((downTierGambitCount / downTierGambitTotal) * 100) : null;
+    const tieredPenaltyExposurePct = tieredPenaltyExposedTotal ? Math.round((tieredPenaltyExposedCount / tieredPenaltyExposedTotal) * 100) : null;
+    const leagueWideAvgMC = leagueEntryCount ? leagueMcSum / leagueEntryCount : null;
+    const championTierDistribution = Object.keys(championTierCounts).length
+      ? Object.entries(championTierCounts)
+          .sort((a, b) => Number(a[0]) - Number(b[0]))
+          .map(([tier, count]) => ({
+            name: `Tier ${tier}`,
+            value: count,
+            pct: Math.round((count / Object.values(championTierCounts).reduce((a, b) => a + b, 0)) * 100),
+          }))
+      : [];
+
+    // Fan favorite's real-world make-cut rate — withdrawn/playing appearances
+    // don't answer made-vs-missed, so the denominator is just those two.
+    const favTally = topGolfer ? golferCutTally.get(topGolfer.name) : null;
+    const fanFavoriteCutRate = favTally && (favTally.madeCut + favTally.missedCut) > 0
+      ? Math.round((favTally.madeCut / (favTally.madeCut + favTally.missedCut)) * 100)
+      : null;
 
     return {
       mostWins, topWins, biggestPrize, highestScore, biggestField, bestRoi, ironMan, topGolfer,
       bridesmaid, topPodiumOnly, toughestTest, totalPaidOut, mostLoyal, nailBiter, runaway,
       cheapestCash, longestShot, totalPicksLogged, mrChalk, mrContrarian, minAvgOdds, maxAvgOdds,
       mcDistribution, mcTotal, calledChampionCount, calledChampionTotal, calledChampionPct,
+      downTierGambitPct, downTierGambitCount, downTierGambitTotal,
+      tieredPenaltyExposurePct, tieredPenaltyExposedCount, tieredPenaltyExposedTotal,
+      leagueWideAvgMC, championTierDistribution, biggestFavoriteToMissCut, fanFavoriteCutRate,
     };
-  }, [majors, strokerRows, golferRows, longestShot, totalPicksLogged]);
+  }, [majors, strokerRows, golferRows, longestShot, totalPicksLogged, golferCutTally, biggestFavoriteToMissCut]);
 
   const oneVOneFun = useMemo(() => ({
     highRoller: highRoller(),
@@ -851,6 +910,7 @@ function GolferScoreList({ rows }) {
 }
 
 const MC_COLORS = ['#3FB950', '#D29922', '#F0883E', '#F85149'];
+const TIER_HEX = { 1: '#58A6FF', 2: '#D29922', 3: '#3FB950', 4: '#79C0FF', 5: '#7DC991', 6: '#D2D250' };
 
 function FunStats({ fun, oneVOne }) {
   if (!fun) return <div className="text-muted text-sm">No past majors yet.</div>;
@@ -866,6 +926,32 @@ function FunStats({ fun, oneVOne }) {
       value: fun.calledChampionPct != null ? `${fun.calledChampionPct}%` : '—',
       sub: fun.calledChampionPct != null
         ? `${fun.calledChampionCount} of ${fun.calledChampionTotal} winning teams had the real champion on their roster`
+        : 'Not enough data yet',
+    },
+    {
+      label: 'Down-tier gambit win rate',
+      value: fun.downTierGambitPct != null ? `${fun.downTierGambitPct}%` : '—',
+      sub: fun.downTierGambitPct != null
+        ? `${fun.downTierGambitCount} of ${fun.downTierGambitTotal} winning teams skipped a tier to double up below it`
+        : 'Not enough data yet',
+    },
+    {
+      label: 'Tiered-penalty exposure',
+      value: fun.tieredPenaltyExposurePct != null ? `${fun.tieredPenaltyExposurePct}%` : '—',
+      sub: fun.tieredPenaltyExposurePct != null
+        ? `${fun.tieredPenaltyExposedCount} of ${fun.tieredPenaltyExposedTotal} winning teams (rule-enabled majors) ate a tiered cut-line penalty`
+        : 'No rule-enabled majors yet',
+    },
+    {
+      label: 'League-wide missed-cut average',
+      value: fun.leagueWideAvgMC != null ? fun.leagueWideAvgMC.toFixed(2) : '—',
+      sub: fun.leagueWideAvgMC != null ? 'Avg. golfers missed cut per entry, every entry, all-time' : 'Not enough data yet',
+    },
+    {
+      label: 'Biggest favorite to miss the cut',
+      value: fun.biggestFavoriteToMissCut ? fun.biggestFavoriteToMissCut.name : '—',
+      sub: fun.biggestFavoriteToMissCut
+        ? `${fun.biggestFavoriteToMissCut.odds} odds · ${fun.biggestFavoriteToMissCut.major}`
         : 'Not enough data yet',
     },
     {
@@ -887,6 +973,11 @@ function FunStats({ fun, oneVOne }) {
       label: 'Fan favorite golfer',
       value: fun.topGolfer?.name || '—',
       sub: fun.topGolfer ? `Picked ${fun.topGolfer.count}× across full-data majors` : 'Not enough data yet',
+    },
+    {
+      label: "Fan favorite's make-cut rate",
+      value: fun.fanFavoriteCutRate != null ? `${fun.fanFavoriteCutRate}%` : '—',
+      sub: fun.fanFavoriteCutRate != null ? `How often ${fun.topGolfer.name} made the cut when picked` : 'Not enough data yet',
     },
     {
       label: 'Always the bridesmaid',
@@ -993,6 +1084,32 @@ function FunStats({ fun, oneVOne }) {
                   contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
                   labelStyle={{ color: '#E6EDF3' }}
                   formatter={(value, name, props) => [`${value} team${value === 1 ? '' : 's'} (${props.payload.pct}%)`, name]}
+                />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      )}
+
+      {fun.championTierDistribution.length > 0 && (
+        <Card className="p-4">
+          <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Champion's pool tier</div>
+          <div className="text-xs text-muted mb-2">
+            What tier the ACTUAL tournament champion was assigned to in this pool's tier system, across every full-data major.
+          </div>
+          <div style={{ width: '100%', height: 240 }}>
+            <ResponsiveContainer>
+              <PieChart>
+                <Pie data={fun.championTierDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} label={(d) => `${d.name}: ${d.pct}%`}>
+                  {fun.championTierDistribution.map((d) => (
+                    <Cell key={d.name} fill={TIER_HEX[Number(d.name.replace('Tier ', ''))] || '#8B949E'} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
+                  labelStyle={{ color: '#E6EDF3' }}
+                  formatter={(value, name, props) => [`${value} major${value === 1 ? '' : 's'} (${props.payload.pct}%)`, name]}
                 />
                 <Legend />
               </PieChart>

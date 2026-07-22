@@ -36,6 +36,8 @@ export function buildMajors() {
       eventType: t.eventType || 'other',
       winner: fs.winnerNames,
       champion: tGolfers.find((g) => g.won)?.name || null,
+      championTier: tGolfers.find((g) => g.won)?.tier ?? null,
+      tieredPenaltyEnabled: !!t.tieredPenaltyEnabled,
       team: fs.team,
       points: fs.points,
       entryCount: tEntries.length,
