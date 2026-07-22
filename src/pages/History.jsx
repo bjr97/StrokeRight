@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { storage, keys, listTournaments } from '../lib/storage.js';
 import { buildMajors, getStrokerWins, trophyCaseEmojis } from '../lib/majors.js';
 import { buildMatchLeaderboard, highRoller, untouchable, biggestRivalry } from '../lib/matchStats.js';
@@ -346,10 +347,35 @@ export default function History({ session, refreshAll }) {
     const mrChalk = minAvgOdds != null ? withOdds.filter((r) => r.avgPickOdds === minAvgOdds) : [];
     const mrContrarian = maxAvgOdds != null ? withOdds.filter((r) => r.avgPickOdds === maxAvgOdds) : [];
 
+    // Winning-team missed-cut distribution: for every winning entry (a tie
+    // counts each co-winner separately, same convention used elsewhere),
+    // how many of its 6 golfers missed the cut. Only full-data majors carry
+    // per-golfer status, so summary-only history rows are skipped.
+    const mcBuckets = { '0': 0, '1': 0, '2': 0, '3+': 0 };
+    let mcTotal = 0;
+    for (const m of majors) {
+      if (!m.fullData || !m.ranked?.length) continue;
+      const winningRows = m.ranked.filter((r) => r.rank === m.ranked[0].rank);
+      for (const row of winningRows) {
+        const mc = row.scored.filter((s) => s.golfer.status === 'missed_cut').length;
+        const key = mc >= 3 ? '3+' : String(mc);
+        mcBuckets[key]++;
+        mcTotal++;
+      }
+    }
+    const mcDistribution = mcTotal
+      ? ['0', '1', '2', '3+'].map((key) => ({
+          name: `${key} MC`,
+          value: mcBuckets[key],
+          pct: Math.round((mcBuckets[key] / mcTotal) * 100),
+        })).filter((d) => d.value > 0)
+      : [];
+
     return {
       mostWins, topWins, biggestPrize, highestScore, biggestField, bestRoi, ironMan, topGolfer,
       bridesmaid, topPodiumOnly, toughestTest, totalPaidOut, mostLoyal, nailBiter, runaway,
       cheapestCash, longestShot, totalPicksLogged, mrChalk, mrContrarian, minAvgOdds, maxAvgOdds,
+      mcDistribution, mcTotal,
     };
   }, [majors, strokerRows, golferRows, longestShot, totalPicksLogged]);
 
@@ -808,6 +834,8 @@ function GolferScoreList({ rows }) {
   );
 }
 
+const MC_COLORS = ['#3FB950', '#D29922', '#F0883E', '#F85149'];
+
 function FunStats({ fun, oneVOne }) {
   if (!fun) return <div className="text-muted text-sm">No past majors yet.</div>;
 
@@ -922,14 +950,43 @@ function FunStats({ fun, oneVOne }) {
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-3">
-      {cards.map((c) => (
-        <Card key={c.label} className="p-4">
-          <div className="text-[11px] uppercase tracking-wide text-muted mb-1">{c.label}</div>
-          <div className="text-lg font-semibold">{c.value}</div>
-          <div className="text-xs text-muted mt-0.5">{c.sub}</div>
+    <div className="space-y-3">
+      {fun.mcDistribution.length > 0 && (
+        <Card className="p-4">
+          <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Winning teams by missed cuts</div>
+          <div className="text-xs text-muted mb-2">
+            Of {fun.mcTotal} winning team{fun.mcTotal === 1 ? '' : 's'} (full-data majors; ties count each co-winner separately) —
+            how many of the 6 golfers missed the cut.
+          </div>
+          <div style={{ width: '100%', height: 240 }}>
+            <ResponsiveContainer>
+              <PieChart>
+                <Pie data={fun.mcDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} label={(d) => `${d.name}: ${d.pct}%`}>
+                  {fun.mcDistribution.map((d, i) => (
+                    <Cell key={d.name} fill={MC_COLORS[['0 MC', '1 MC', '2 MC', '3+ MC'].indexOf(d.name)] || MC_COLORS[i % MC_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
+                  labelStyle={{ color: '#E6EDF3' }}
+                  formatter={(value, name, props) => [`${value} team${value === 1 ? '' : 's'} (${props.payload.pct}%)`, name]}
+                />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
         </Card>
-      ))}
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        {cards.map((c) => (
+          <Card key={c.label} className="p-4">
+            <div className="text-[11px] uppercase tracking-wide text-muted mb-1">{c.label}</div>
+            <div className="text-lg font-semibold">{c.value}</div>
+            <div className="text-xs text-muted mt-0.5">{c.sub}</div>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
