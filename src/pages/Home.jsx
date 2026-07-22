@@ -2,11 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { storage, keys, listTournaments } from '../lib/storage.js';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
-import { buildMajors, withUniqueHighlights, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, trophyCaseEmojis, GRAND_SLAM_TYPES, getStrokerRows, getBestROI } from '../lib/majors.js';
+import { buildMajors, withUniqueHighlights, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, GRAND_SLAM_TYPES, getStrokerRows, getBestROI } from '../lib/majors.js';
 import { buildMatchLeaderboard, knockoutKing } from '../lib/matchStats.js';
 import { eventTypeLabel, eventTypeEmoji } from '../lib/eventTypes.js';
 import { fmtDate } from '../lib/format.js';
-import { Card, Stat, Button, TrophyCase, TrophyCaseModal, TierDot, StatusBadge, fmtToPar } from '../components/ui.jsx';
+import { Card, Stat, Button, TierDot, StatusBadge, fmtToPar } from '../components/ui.jsx';
 
 export default function Home({ tournament, golfers, entries, session, onNav }) {
   const nextMajor = storage.get(keys.nextMajor);
@@ -61,7 +61,6 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   const hasRecords = !!(mostDecorated || streaks.overall || streaks.sameEvent || grandSlam.leaders.length || knockout || bestBrain);
 
   const strokerWins = getStrokerWins(); // cheap; always fresh
-  const [trophyFor, setTrophyFor] = useState(null); // { label, wins } or null — single-stroker icon click
   const [showMostDecoratedModal, setShowMostDecoratedModal] = useState(false);
   const [showStreakModal, setShowStreakModal] = useState(false);
   const [showGrandSlamModal, setShowGrandSlamModal] = useState(false);
@@ -194,9 +193,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
                   <span className="text-xs text-muted">
                     {mostDecorated.wins} win{mostDecorated.wins === 1 ? '' : 's'}
                   </span>
-                  {mostDecorated.names.map((n) => (
-                    <TrophyCase key={n} emojis={trophyCaseEmojis(strokerWins.get(n))} onClick={() => setTrophyFor({ label: n, wins: strokerWins.get(n) || [] })} />
-                  ))}
+                  <span className="text-sm leading-none">{'🥇'.repeat(mostDecorated.wins)}</span>
                 </div>
               </Card>
             )}
@@ -264,9 +261,6 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
         </div>
       )}
 
-      {trophyFor && (
-        <TrophyCaseModal name={trophyFor.label} wins={trophyFor.wins} onClose={() => setTrophyFor(null)} />
-      )}
       {showMostDecoratedModal && (
         <MostDecoratedModal names={mostDecorated.names} strokerWins={strokerWins} onClose={() => setShowMostDecoratedModal(false)} />
       )}
