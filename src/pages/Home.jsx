@@ -235,8 +235,11 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
               <Card className="p-4" onClick={() => setShowKnockoutModal(true)}>
                 <div className="text-[11px] uppercase tracking-wide text-muted mb-1">1v1 knockout king</div>
                 <div className="text-lg font-semibold">{knockout.names.join(' & ')}</div>
-                <div className="text-xs text-muted mt-0.5">
-                  {knockout.wins} 1v1 win{knockout.wins === 1 ? '' : 's'}
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-muted">
+                    {knockout.wins} 1v1 win{knockout.wins === 1 ? '' : 's'}
+                  </span>
+                  <span className="text-sm leading-none">{'🥊'.repeat(knockout.wins)}</span>
                 </div>
               </Card>
             )}

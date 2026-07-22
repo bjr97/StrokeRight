@@ -782,7 +782,12 @@ function StrokerTable({ rows, sort, onSort, strokerWins, onOpenTrophy, onOpenPod
               </td>
               <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums">
                 {r.wins > 0 ? (
-                  <TrophyCase emojis={String(r.wins)} onClick={() => onOpenTrophy(r.name)} />
+                  <button
+                    onClick={() => onOpenTrophy(r.name)}
+                    className="underline decoration-dotted underline-offset-2 hover:opacity-80"
+                  >
+                    {r.wins}
+                  </button>
                 ) : r.wins}
               </td>
               <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-warn">
@@ -822,6 +827,8 @@ function splitMajorName(major) {
 function PayoutMatrixTable({ matrix }) {
   const { rows, strokers, grandTotal } = matrix;
   const [detail, setDetail] = useState(null); // { major, strokerName, rec } or null
+  const [majorSummary, setMajorSummary] = useState(null); // row or null
+  const [strokerSummary, setStrokerSummary] = useState(null); // { name, total } or null
   // 'date' (default, newest first) | 'total' | a stroker name — click a
   // header to sort rows by that column's value, biggest first; click again
   // to reverse. Ties fall back to newest-first so the order stays stable.
@@ -905,7 +912,12 @@ function PayoutMatrixTable({ matrix }) {
                     );
                   })}
                   <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-medium whitespace-nowrap border-l border-border">
-                    {fm(row.total)}
+                    <button
+                      onClick={() => setMajorSummary(row)}
+                      className="underline decoration-dotted underline-offset-2 hover:opacity-80"
+                    >
+                      {fm(row.total)}
+                    </button>
                   </td>
                 </tr>
               );
@@ -913,7 +925,14 @@ function PayoutMatrixTable({ matrix }) {
             <tr className="border-t-2 border-border">
               <td className="sticky left-0 bg-card py-1.5 sm:py-2 px-1.5 font-medium whitespace-nowrap">Total</td>
               {strokers.map((s) => (
-                <td key={s.name} className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-medium whitespace-nowrap">{fm(s.total)}</td>
+                <td key={s.name} className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-medium whitespace-nowrap">
+                  <button
+                    onClick={() => setStrokerSummary({ name: s.name, total: s.total })}
+                    className="underline decoration-dotted underline-offset-2 hover:opacity-80"
+                  >
+                    {fm(s.total)}
+                  </button>
+                </td>
               ))}
               <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-semibold whitespace-nowrap border-l border-border">
                 {fm(grandTotal)}
@@ -931,7 +950,87 @@ function PayoutMatrixTable({ matrix }) {
           onClose={() => setDetail(null)}
         />
       )}
+      {majorSummary && (
+        <MajorSummaryModal major={majorSummary.major} row={majorSummary} onClose={() => setMajorSummary(null)} />
+      )}
+      {strokerSummary && (
+        <StrokerSummaryModal
+          strokerName={strokerSummary.name}
+          rows={rows}
+          total={strokerSummary.total}
+          onClose={() => setStrokerSummary(null)}
+        />
+      )}
     </>
+  );
+}
+
+// Row-total click: every stroker who cashed in this one major, place + payout.
+function MajorSummaryModal({ major, row, onClose }) {
+  const flat = [...row.cells.entries()]
+    .flatMap(([name, rec]) => rec.items.map((item) => ({ name, ...item })))
+    .sort((a, b) => b.payout - a.payout);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-medium">{major.name}</div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        <div className="space-y-2">
+          {flat.map((item, i) => (
+            <div key={i} className="flex items-center justify-between text-sm">
+              <span>
+                <span className="font-medium">{item.rankLabel}</span>
+                <span className="text-muted"> {item.name}</span>
+                {item.points != null && (
+                  <span className="text-muted text-xs"> · {item.points >= 0 ? '+' : ''}{item.points} pts</span>
+                )}
+              </span>
+              <span className="text-accent font-medium tabular-nums">{fm(item.payout)}</span>
+            </div>
+          ))}
+        </div>
+        <div className="text-xs text-muted mt-3 pt-3 border-t border-border">
+          Total paid out: <span className="text-text font-medium">{fm(row.total)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Column-total click: every major a stroker has cashed in, place + payout.
+function StrokerSummaryModal({ strokerName, rows, total, onClose }) {
+  const flat = rows
+    .filter((row) => row.cells.has(strokerName))
+    .flatMap((row) => row.cells.get(strokerName).items.map((item) => ({ major: row.major, ...item })))
+    .sort((a, b) => new Date(b.major.date) - new Date(a.major.date));
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-medium">{strokerName}</div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        <div className="space-y-2">
+          {flat.map((item, i) => (
+            <div key={i} className="flex items-center justify-between text-sm">
+              <span>
+                <span className="font-medium">{item.rankLabel}</span>
+                <span className="text-muted"> {item.major.name}</span>
+                {item.points != null && (
+                  <span className="text-muted text-xs"> · {item.points >= 0 ? '+' : ''}{item.points} pts</span>
+                )}
+              </span>
+              <span className="text-accent font-medium tabular-nums">{fm(item.payout)}</span>
+            </div>
+          ))}
+        </div>
+        <div className="text-xs text-muted mt-3 pt-3 border-t border-border">
+          All-time total: <span className="text-text font-medium">{fm(total)}</span>
+        </div>
+      </div>
+    </div>
   );
 }
 
