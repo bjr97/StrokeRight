@@ -881,6 +881,30 @@ function splitMajorName(major) {
 function PayoutMatrixTable({ matrix }) {
   const { rows, strokers, grandTotal } = matrix;
   const [detail, setDetail] = useState(null); // { major, strokerName, rec } or null
+  // 'date' (default, newest first) | 'total' | a stroker name — click a
+  // header to sort rows by that column's value, biggest first; click again
+  // to reverse. Ties fall back to newest-first so the order stays stable.
+  const [sort, setSort] = useState({ key: 'date', dir: -1 });
+
+  function toggleSort(key) {
+    setSort((s) => (s.key === key ? { key, dir: s.dir * -1 } : { key, dir: -1 }));
+  }
+
+  const sortedRows = useMemo(() => {
+    const list = [...rows];
+    const valueFor = (row) => {
+      if (sort.key === 'date') return new Date(row.major.date).getTime();
+      if (sort.key === 'total') return row.total;
+      return row.cells.get(sort.key)?.total || 0;
+    };
+    list.sort((a, b) => {
+      const diff = (valueFor(a) - valueFor(b)) * sort.dir;
+      if (diff !== 0) return diff;
+      return new Date(b.major.date) - new Date(a.major.date);
+    });
+    return list;
+  }, [rows, sort]);
+
   if (!rows.length || !strokers.length) {
     return <Card className="p-4 text-center text-muted text-sm">No payouts recorded yet.</Card>;
   }
@@ -890,21 +914,31 @@ function PayoutMatrixTable({ matrix }) {
         <table className="text-xs sm:text-sm">
           <thead>
             <tr>
-              <th className="sticky left-0 bg-card text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-left align-bottom pb-1.5 px-1.5 whitespace-nowrap">
+              <th
+                onClick={() => toggleSort('date')}
+                className={`sticky left-0 bg-card text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-left align-bottom pb-1.5 px-1.5 whitespace-nowrap cursor-pointer select-none ${sort.key === 'date' ? 'text-accent' : ''}`}
+              >
                 Major
               </th>
               {strokers.map((s) => (
-                <th key={s.name} className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap">
+                <th
+                  key={s.name}
+                  onClick={() => toggleSort(s.name)}
+                  className={`text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap cursor-pointer select-none ${sort.key === s.name ? 'text-accent' : ''}`}
+                >
                   {s.name}
                 </th>
               ))}
-              <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-text text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap border-l border-border">
+              <th
+                onClick={() => toggleSort('total')}
+                className={`text-[9px] sm:text-[11px] uppercase tracking-wide text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap border-l border-border cursor-pointer select-none ${sort.key === 'total' ? 'text-accent' : 'text-text'}`}
+              >
                 Total
               </th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
+            {sortedRows.map((row) => {
               const { label, year } = splitMajorName(row.major);
               return (
                 <tr key={row.major.id} className="border-t border-border">
