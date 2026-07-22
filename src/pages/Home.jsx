@@ -25,12 +25,10 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
     [majors]
   );
 
-  // Defending champ / last winner tiles are scoped to whichever event is
-  // most relevant right now: the ACTIVE tournament's own type while one's
-  // running ("who won the last Masters" next to this year's Masters), or
-  // — between majors, once the active one's been marked completed — the
-  // upcoming major from the admin's countdown override, same source the
-  // Countdown card itself falls back to.
+  // Two distinct concepts, easy to conflate: "Defending champ" is who won
+  // THIS SAME event last time it was played (scoped to the active/upcoming
+  // event's type), while "Last winner" is whoever won the single most
+  // recent tournament the pool has run, full stop, regardless of type.
   const champEventType = tournament?.eventType || nextMajor?.eventType;
   const activePriorMajors = useMemo(() => {
     if (!champEventType || champEventType === 'other') return [];
@@ -40,10 +38,11 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
       .filter((m) => m.eventType === champEventType && m.date && new Date(m.date) < anchor)
       .sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [majors, champEventType, tournament, nextMajor]);
-  const activeLastMajor = activePriorMajors[0] || null;
-  const activeDefendingChampions = activeLastMajor?.winner
-    ? activeLastMajor.winner.split(' & ').map((s) => s.trim()).filter(Boolean)
+  const activeDefendingChampions = activePriorMajors[0]?.winner
+    ? activePriorMajors[0].winner.split(' & ').map((s) => s.trim()).filter(Boolean)
     : [];
+
+  const lastHostedMajor = recentMajors[0] || null;
 
   const mostDecorated = useMemo(() => getMostDecorated(majors), [majors]);
   const streaks = useMemo(() => getLongestStreaks(majors), [majors]);
@@ -81,19 +80,19 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
         <Countdown name={countdownName} deadline={countdownDeadline} />
       )}
 
-      {(activeDefendingChampions.length > 0 || activeLastMajor) && (
+      {(activeDefendingChampions.length > 0 || lastHostedMajor) && (
         <div className="grid grid-cols-2 gap-3">
           {activeDefendingChampions.length > 0 && (
-            <Card className="p-4 border-yellow-500/30 bg-yellow-500/5">
-              <div className="text-[11px] uppercase tracking-wide text-yellow-500/80 mb-1">Defending champ</div>
-              <div className="text-lg font-semibold text-yellow-400">{activeDefendingChampions.join(' & ')}</div>
+            <Card className="p-4">
+              <div className="text-[11px] uppercase tracking-wide text-muted mb-1">🏆 Defending champ</div>
+              <div className="text-lg font-semibold">{activeDefendingChampions.join(' & ')}</div>
             </Card>
           )}
-          {activeLastMajor && (
-            <Card className="p-4 border-yellow-500/30 bg-yellow-500/5">
-              <div className="text-[11px] uppercase tracking-wide text-yellow-500/80 mb-1">Last winner</div>
-              <div className="text-lg font-semibold text-yellow-400">{activeLastMajor.winner}</div>
-              <div className="text-xs text-muted mt-0.5">{activeLastMajor.name}</div>
+          {lastHostedMajor && (
+            <Card className="p-4">
+              <div className="text-[11px] uppercase tracking-wide text-muted mb-1">🏆 Last winner</div>
+              <div className="text-lg font-semibold">{lastHostedMajor.winner}</div>
+              <div className="text-xs text-muted mt-0.5">{lastHostedMajor.name}</div>
             </Card>
           )}
         </div>
