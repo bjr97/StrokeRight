@@ -3,17 +3,17 @@ import React, { useState } from 'react';
 const PRIMARY = [
   { id: 'home',        label: 'Home' },
   { id: 'submit',      label: 'Submit' },
-  { id: 'players',     label: 'Players' },
+  { id: 'matches',     label: '1v1' },
   { id: 'leaderboard', label: 'Board' },
 ];
 const OVERFLOW = [
-  { id: 'trends',  label: 'Trends' },
-  { id: 'compare', label: 'Compare' },
-  { id: 'history', label: 'History' },
-  { id: 'rules',   label: 'Rules' },
+  { id: 'players',  label: 'Players' },
+  { id: 'analysis', label: 'Analysis' },
+  { id: 'history',  label: 'History' },
+  { id: 'rules',    label: 'Rules' },
 ];
 
-export default function Nav({ page, onChange, session, onLogout }) {
+export default function Nav({ page, onChange, session, onLogout, matchAlert }) {
   const [moreOpen, setMoreOpen] = useState(false);
 
   return (
@@ -38,7 +38,12 @@ export default function Nav({ page, onChange, session, onLogout }) {
                     : 'text-muted hover:text-text hover:bg-card'
                 }`}
               >
-                {t.label}
+                <span className="relative inline-block">
+                  {t.label}
+                  {t.id === 'matches' && matchAlert && (
+                    <span className="absolute -top-1 -right-2 w-1.5 h-1.5 rounded-full bg-danger" />
+                  )}
+                </span>
               </button>
             ))}
             {session?.isAdmin === true && (
@@ -60,7 +65,7 @@ export default function Nav({ page, onChange, session, onLogout }) {
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-bg/95 backdrop-blur border-t border-border safe-bottom">
         <div className="grid grid-cols-5">
           {PRIMARY.map((t) => (
-            <NavBtn key={t.id} active={page === t.id} onClick={() => onChange(t.id)} label={t.label} />
+            <NavBtn key={t.id} active={page === t.id} onClick={() => onChange(t.id)} label={t.label} badge={t.id === 'matches' && matchAlert} />
           ))}
           <NavBtn
             active={OVERFLOW.some((o) => o.id === page) || moreOpen}
@@ -94,13 +99,16 @@ export default function Nav({ page, onChange, session, onLogout }) {
   );
 }
 
-function NavBtn({ active, onClick, label }) {
+function NavBtn({ active, onClick, label, badge }) {
   return (
     <button
       onClick={onClick}
       className={`py-3 text-xs font-medium ${active ? 'text-accent' : 'text-muted'}`}
     >
-      {label}
+      <span className="relative inline-block">
+        {label}
+        {badge && <span className="absolute -top-1 -right-2 w-1.5 h-1.5 rounded-full bg-danger" />}
+      </span>
     </button>
   );
 }

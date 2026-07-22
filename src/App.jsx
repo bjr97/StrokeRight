@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { storage, keys, getActiveTournamentId, bootstrap, refresh } from './lib/storage.js';
 import { SUPABASE_READY } from './lib/supabase.js';
 import { fetchEspnScoreboard, normalizeEspn } from './lib/espnApi.js';
+import { nextTurn, isDraftComplete } from './lib/matches.js';
 import Rules from './pages/Rules.jsx';
 import AuthGate from './components/AuthGate.jsx';
 import Nav from './components/Nav.jsx';
@@ -9,8 +10,8 @@ import Home from './pages/Home.jsx';
 import Submit from './pages/Submit.jsx';
 import Leaderboard from './pages/Leaderboard.jsx';
 import Players from './pages/Players.jsx';
-import Compare from './pages/Compare.jsx';
-import Trends from './pages/Trends.jsx';
+import Analysis from './pages/Analysis.jsx';
+import Matches from './pages/Matches.jsx';
 import History from './pages/History.jsx';
 import Admin from './pages/Admin.jsx';
 import { Card, Button, Input, alertAsync } from './components/ui.jsx';
@@ -19,9 +20,22 @@ export default function App() {
   const [bootstrapped, setBootstrapped] = useState(false);
   const [bootError, setBootError] = useState(null);
   const [page, setPage] = useState('home');
+  const [analysisTab, setAnalysisTab] = useState('trends');
   const [session, setSession] = useState(null);
   const [adminPending, setAdminPending] = useState(false);
   const [tick, setTick] = useState(0);
+
+  // Trends and Compare used to be separate pages, now both live under
+  // Analysis — translate old nav targets (e.g. Home's "Compare teams" link)
+  // to the right Analysis sub-tab instead of a dead page id.
+  function navigateTo(target) {
+    if (target === 'compare' || target === 'trends') {
+      setAnalysisTab(target);
+      setPage('analysis');
+      return;
+    }
+    setPage(target);
+  }
 
   // Hydrate from Supabase on mount
   useEffect(() => {
@@ -53,7 +67,28 @@ export default function App() {
   const tournament = tournamentId ? storage.get(keys.tournament(tournamentId)) : null;
   const golfers   = tournamentId ? (storage.get(keys.golfers(tournamentId)) || []) : [];
   const entries   = tournamentId ? (storage.get(keys.entries(tournamentId)) || []) : [];
+  const matches   = tournamentId ? (storage.get(keys.matches(tournamentId)) || []) : [];
   const snapshots = tournamentId ? (storage.get(keys.snapshots(tournamentId)) || []) : [];
+
+  // Red-dot trigger for the 1v1 tab: something addressed to me needing
+  // action — a proposal I haven't responded to, an open challenge someone
+  // else posted, or it's my turn in an active draft. Not just "any match
+  // exists" — this should only fire for things that actually need me.
+  const myNameLower = session?.name?.toLowerCase() || '';
+  const matchAlert = !!(myNameLower && matches.some((m) => {
+    if (m.status === 'proposed') {
+      if (m.opponentName && m.opponentName.toLowerCase() === myNameLower) return true;
+      if (!m.opponentName && m.challengerName.toLowerCase() !== myNameLower) return true;
+      return false;
+    }
+    if (m.status === 'accepted' && !isDraftComplete(m)) {
+      const iAmChallenger = m.challengerName.toLowerCase() === myNameLower;
+      const iAmOpponent = m.opponentName && m.opponentName.toLowerCase() === myNameLower;
+      const turn = nextTurn(m);
+      return (turn === 'challenger' && iAmChallenger) || (turn === 'opponent' && iAmOpponent);
+    }
+    return false;
+  }));
 
   // Optional: refresh ESPN live (manual button; auto-refresh would hit rate limits)
   async function refreshLive() {
@@ -154,15 +189,15 @@ export default function App() {
 
   return (
     <div className="min-h-dvh">
-      <Nav page={page} onChange={setPage} session={session} onLogout={handleLogout} />
+      <Nav page={page} onChange={setPage} session={session} onLogout={handleLogout} matchAlert={matchAlert} />
 
       <main className="pb-20 md:pb-0">
-        {page === 'home' && <Home tournament={tournament} golfers={golfers} entries={entries} session={session} onNav={setPage} />}
+        {page === 'home' && <Home tournament={tournament} golfers={golfers} entries={entries} session={session} onNav={navigateTo} />}
         {page === 'submit' && tournament && <Submit tournament={tournament} golfers={golfers} entries={entries} session={session} refreshAll={refreshAll} />}
+        {page === 'matches' && tournament && <Matches tournament={tournament} golfers={golfers} session={session} refreshAll={refreshAll} />}
         {page === 'players' && tournament && <Players tournament={tournament} golfers={golfers} entries={entries} session={session} onNavToLeaderboard={() => setPage('leaderboard')} />}
         {page === 'leaderboard' && tournament && <Leaderboard tournament={tournament} golfers={golfers} entries={entries} snapshots={snapshots} session={session} />}
-        {page === 'compare' && tournament && <Compare tournament={tournament} golfers={golfers} entries={entries} session={session} />}
-        {page === 'trends' && tournament && <Trends tournament={tournament} golfers={golfers} entries={entries} snapshots={snapshots} session={session} />}
+        {page === 'analysis' && tournament && <Analysis initialTab={analysisTab} tournament={tournament} golfers={golfers} entries={entries} snapshots={snapshots} session={session} />}
         {page === 'history' && <History session={session} refreshAll={refreshAll} />}
         {page === 'admin' && session.isAdmin && <Admin tournament={tournament} golfers={golfers} refreshAll={refreshAll} />}
         {page === 'rules' && <Rules />}
