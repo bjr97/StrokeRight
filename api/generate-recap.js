@@ -56,9 +56,9 @@ export default async function handler(req, res) {
 
 Tournament: ${tournamentName}${eventTypeLabel ? ` (${eventTypeLabel})` : ''}${course ? ` at ${course}` : ''}
 Winner: ${winnerNames} — ${entryCount ?? '?'} entries, $${prize ?? '?'} prize, ${totalPoints >= 0 ? '+' : ''}${totalPoints} pts
-Winning team: ${teamLines}
+Winning team (${winnerNames}'s picks): ${teamLines}
+${highlight ? `Notable about the WINNING team specifically: ${highlight}` : ''}
 ${runnerUpLine}
-${highlight ? `Notable: ${highlight}` : ''}
 ${contextLines ? `Storylines to weave in if they're genuinely interesting (skip anything forced):\n${contextLines}` : ''}
 
 Write the recap now.`;
