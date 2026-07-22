@@ -289,6 +289,51 @@ export default function History({ session, refreshAll }) {
     setGSort((s) => (s.key === key ? { key, dir: s.dir * -1 } : { key, dir: -1 }));
   }
 
+  // Events x payouts matrix: rows = majors (newest first), columns = every
+  // stroker who's cashed a payout at least once (sorted by all-time total,
+  // highest first), respecting the page's event-type/year filters like
+  // everything else on this tab. Full-data majors split each entry's actual
+  // payout by stroker name (summing if they had more than one entry that
+  // major); summary-only majors (no tournament rows left) only ever
+  // recorded the winner's prize, so every other cell in that row is $0.
+  const payoutMatrix = useMemo(() => {
+    const rowsByMajor = majors
+      .map((m) => {
+        const cells = new Map(); // stroker name -> $
+        if (m.fullData && m.ranked?.length) {
+          for (const r of m.ranked) {
+            const payout = m.payouts.get(r.entry.id) || 0;
+            if (payout <= 0) continue;
+            cells.set(r.entry.name, (cells.get(r.entry.name) || 0) + payout);
+          }
+        } else if (m.prize != null) {
+          const winnerNames = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
+          if (winnerNames.length) {
+            const share = m.prize / winnerNames.length;
+            for (const w of winnerNames) cells.set(w, (cells.get(w) || 0) + share);
+          }
+        }
+        const total = [...cells.values()].reduce((a, b) => a + b, 0);
+        return { major: m, cells, total };
+      })
+      .filter((row) => row.total > 0)
+      .sort((a, b) => new Date(b.major.date) - new Date(a.major.date));
+
+    const strokerTotals = new Map();
+    for (const row of rowsByMajor) {
+      for (const [name, amt] of row.cells) {
+        strokerTotals.set(name, (strokerTotals.get(name) || 0) + amt);
+      }
+    }
+    const strokers = [...strokerTotals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, total]) => ({ name, total }));
+
+    const grandTotal = [...strokerTotals.values()].reduce((a, b) => a + b, 0);
+
+    return { rows: rowsByMajor, strokers, grandTotal };
+  }, [majors]);
+
   const fun = useMemo(() => {
     if (!majors.length) return null;
     const topWins = Math.max(0, ...strokerRows.map((r) => r.wins));
@@ -568,7 +613,7 @@ export default function History({ session, refreshAll }) {
       )}
 
       {tab === 'strokers' && (
-        <div className="space-y-2">
+        <div className="space-y-4">
           <StrokerTable rows={sortedStrokers} sort={gSort} onSort={toggleGSort} strokerWins={strokerWins} onOpenTrophy={setTrophyFor} onOpenPodium={setPodiumFor} />
           <p className="text-xs text-muted">
             $ Won includes paid finishes that weren't wins (e.g. a 2nd place that cashed a payout).
@@ -576,6 +621,15 @@ export default function History({ session, refreshAll }) {
             (money earned − entry fees) ÷ entry fees, within that same set — so 0% means broke even and a
             negative number means a net loss. "—" means we don't have enough data yet.
           </p>
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Events & payouts</div>
+            <PayoutMatrixTable matrix={payoutMatrix} />
+            <p className="text-xs text-muted">
+              Every major (rows) x every stroker who's cashed a payout at least once (columns), sorted by
+              all-time total. A major with no known payout breakdown only shows the winner's cell.
+            </p>
+          </div>
         </div>
       )}
 
@@ -797,6 +851,61 @@ function StrokerTable({ rows, sort, onSort, strokerWins, onOpenTrophy, onOpenPod
           {!rows.length && (
             <tr><td colSpan={7} className="py-4 text-center text-muted text-sm">No data yet.</td></tr>
           )}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
+function PayoutMatrixTable({ matrix }) {
+  const { rows, strokers, grandTotal } = matrix;
+  if (!rows.length || !strokers.length) {
+    return <Card className="p-4 text-center text-muted text-sm">No payouts recorded yet.</Card>;
+  }
+  return (
+    <Card className="p-2 sm:p-3 overflow-x-auto">
+      <table className="text-xs sm:text-sm">
+        <thead>
+          <tr>
+            <th className="sticky left-0 bg-card text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-left align-bottom pb-1.5 px-1.5 whitespace-nowrap">
+              Major
+            </th>
+            {strokers.map((s) => (
+              <th key={s.name} className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap">
+                {s.name}
+              </th>
+            ))}
+            <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-text text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap border-l border-border">
+              Total
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.major.id} className="border-t border-border">
+              <td className="sticky left-0 bg-card py-1.5 sm:py-2 px-1.5 whitespace-nowrap">{row.major.name}</td>
+              {strokers.map((s) => {
+                const amt = row.cells.get(s.name) || 0;
+                return (
+                  <td key={s.name} className={`py-1.5 sm:py-2 px-1.5 text-right tabular-nums whitespace-nowrap ${amt > 0 ? 'text-accent' : 'text-muted'}`}>
+                    {amt > 0 ? fm(amt) : '—'}
+                  </td>
+                );
+              })}
+              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-medium whitespace-nowrap border-l border-border">
+                {fm(row.total)}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t-2 border-border">
+            <td className="sticky left-0 bg-card py-1.5 sm:py-2 px-1.5 font-medium whitespace-nowrap">Total</td>
+            {strokers.map((s) => (
+              <td key={s.name} className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-medium whitespace-nowrap">{fm(s.total)}</td>
+            ))}
+            <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-semibold whitespace-nowrap border-l border-border">
+              {fm(grandTotal)}
+            </td>
+          </tr>
         </tbody>
       </table>
     </Card>
