@@ -116,7 +116,7 @@ export default function Rules() {
       </Section>
 
       <p className="text-xs text-muted px-1">
-        ** Starting with the <span className="text-text">2025 Open Championship</span> (July 17, 2025), the made-cut bonus / missed-cut penalty magnitude changed from ±2 to ±3, and the tiered cut-line penalty (rules 7–8) was introduced. Both apply to every major from that point forward, including all 2026 majors. Separately, entry fees changed from $10 to $20 starting with the <span className="text-text">2026 Open Championship</span> (July 16, 2026).
+        ** Starting with the <span className="text-text">2025 Open Championship</span> (July 17, 2025), the made-cut bonus / missed-cut penalty magnitude changed from ±2 to ±3, and the tiered cut-line penalty (rules 7–8) was introduced. Both apply to every major from that point forward, including all 2026 majors. Separately, entry fees changed from $10 to $20 starting with the <span className="text-text">2026 Open Championship</span> (July 16, 2026). Further back, every <span className="text-text">2023 major</span> used 5-golfer teams instead of 6 — same scoring rules otherwise, just one fewer pick per entry.
       </p>
     </div>
   );

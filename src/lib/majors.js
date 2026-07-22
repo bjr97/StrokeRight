@@ -483,6 +483,15 @@ export function getBestROI(strokerRows) {
   return { rows: leaders, roi: max };
 }
 
+/** Stroker(s) with the most gross $ winnings, all-time (includes both wins and paid non-winning finishes). Null if nobody's ever cashed. */
+export function getMoneyBags(strokerRows) {
+  const withMoney = strokerRows.filter((r) => r.moneyWon > 0);
+  if (!withMoney.length) return null;
+  const max = Math.max(...withMoney.map((r) => r.moneyWon));
+  const leaders = withMoney.filter((r) => r.moneyWon === max);
+  return { rows: leaders, moneyWon: max };
+}
+
 // Fixed display order so the emoji string reads the same for everyone
 // regardless of the order they actually won things in.
 const TROPHY_ORDER = ['players', 'masters', 'pga', 'us_open', 'open', 'wm_open'];

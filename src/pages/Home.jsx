@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { storage, keys, listTournaments } from '../lib/storage.js';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
-import { buildMajors, withUniqueHighlights, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, GRAND_SLAM_TYPES, getStrokerRows, getBestROI } from '../lib/majors.js';
+import { buildMajors, withUniqueHighlights, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, GRAND_SLAM_TYPES, getStrokerRows, getBestROI, getMoneyBags } from '../lib/majors.js';
 import { buildMatchLeaderboard, knockoutKing } from '../lib/matchStats.js';
 import { eventTypeLabel, eventTypeEmoji } from '../lib/eventTypes.js';
 import { fmtDate } from '../lib/format.js';
@@ -58,7 +58,8 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   const knockout = useMemo(() => knockoutKing(matchRows), [matchRows]);
   const strokerRows = useMemo(() => getStrokerRows(majors, listTournaments()), [majors]);
   const bestBrain = useMemo(() => getBestROI(strokerRows), [strokerRows]);
-  const hasRecords = !!(mostDecorated || streaks.overall || streaks.sameEvent || grandSlam.leaders.length || knockout || bestBrain);
+  const moneyBags = useMemo(() => getMoneyBags(strokerRows), [strokerRows]);
+  const hasRecords = !!(mostDecorated || streaks.overall || streaks.sameEvent || grandSlam.leaders.length || knockout || bestBrain || moneyBags);
 
   const strokerWins = getStrokerWins(); // cheap; always fresh
   const [showMostDecoratedModal, setShowMostDecoratedModal] = useState(false);
@@ -66,6 +67,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   const [showGrandSlamModal, setShowGrandSlamModal] = useState(false);
   const [showKnockoutModal, setShowKnockoutModal] = useState(false);
   const [showBestBrainModal, setShowBestBrainModal] = useState(false);
+  const [showMoneyBagsModal, setShowMoneyBagsModal] = useState(false);
 
   let ranked = [], structure = null, leader = null, myEntries = [];
   if (tournament) {
@@ -253,6 +255,16 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
                 </div>
               </Card>
             )}
+
+            {moneyBags && (
+              <Card className="p-4" onClick={() => setShowMoneyBagsModal(true)}>
+                <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Money bags</div>
+                <div className="text-lg font-semibold">{moneyBags.rows.map((r) => r.name).join(' & ')}</div>
+                <div className="text-xs text-muted mt-0.5">
+                  {fmtMoney(moneyBags.moneyWon)} won, all-time
+                </div>
+              </Card>
+            )}
           </div>
         </div>
       )}
@@ -278,6 +290,9 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
       )}
       {showBestBrainModal && (
         <BestBrainModal bestBrain={bestBrain} onClose={() => setShowBestBrainModal(false)} />
+      )}
+      {showMoneyBagsModal && (
+        <MoneyBagsModal moneyBags={moneyBags} onClose={() => setShowMoneyBagsModal(false)} />
       )}
     </div>
   );
@@ -461,6 +476,34 @@ function BestBrainModal({ bestBrain, onClose }) {
         </div>
         <div className="text-xs text-muted mt-3 pt-3 border-t border-border">
           ROI = (money earned − entry fees) ÷ entry fees, across full-data majors only.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MoneyBagsModal({ moneyBags, onClose }) {
+  if (!moneyBags) return null;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-medium">Money bags</div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        <div className="space-y-3">
+          {moneyBags.rows.map((r, i) => (
+            <div key={r.name} className={i > 0 ? 'pt-3 border-t border-border' : ''}>
+              <div className="text-sm font-medium mb-1">{r.name}</div>
+              <div className="text-xs text-muted">
+                <span className="text-accent">{fmtMoney(r.moneyWon)}</span> won · {r.wins} win{r.wins === 1 ? '' : 's'}
+                {r.entries != null && <> · {r.entries} entries</>}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="text-xs text-muted mt-3 pt-3 border-t border-border">
+          Gross winnings — every dollar cashed, wins and non-winning paid finishes alike. Not net of entry fees.
         </div>
       </div>
     </div>
