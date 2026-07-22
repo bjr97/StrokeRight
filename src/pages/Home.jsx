@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { storage, keys } from '../lib/storage.js';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
-import { buildMajors, withUniqueHighlights, getDefendingChampions, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, trophyCaseEmojis, GRAND_SLAM_TYPES } from '../lib/majors.js';
+import { buildMajors, withUniqueHighlights, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, trophyCaseEmojis, GRAND_SLAM_TYPES } from '../lib/majors.js';
 import { buildMatchLeaderboard, knockoutKing } from '../lib/matchStats.js';
 import { eventTypeLabel, eventTypeEmoji } from '../lib/eventTypes.js';
 import { fmtDate } from '../lib/format.js';
@@ -15,11 +15,6 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   // fall back to the active tournament's own submission deadline.
   const countdownName = nextMajor?.name || tournament?.name;
   const countdownDeadline = nextMajor?.deadline || tournament?.deadline;
-  const countdownEventType = nextMajor?.eventType || tournament?.eventType;
-  // No startDate exists yet for a pure override, so anchor on the deadline
-  // instead — it's always at or before the real event, which is all that
-  // matters for "did this prior edition happen before the upcoming one".
-  const countdownAnchorDate = nextMajor?.deadline || tournament?.startDate || tournament?.deadline;
 
   const majors = useMemo(() => buildMajors(), [tournament, entries]);
   // Shown side by side, so each of these 4 gets a DIFFERENT highlight fact
@@ -29,11 +24,23 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
     () => withUniqueHighlights([...majors].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4)),
     [majors]
   );
-  const lastMajorOverall = recentMajors[0] || null;
-  const defendingChampions = useMemo(
-    () => getDefendingChampions({ eventType: countdownEventType, anchorDate: countdownAnchorDate }),
-    [countdownEventType, countdownAnchorDate, majors]
-  );
+
+  // Defending champ / last winner tiles sit right next to the ACTIVE
+  // tournament's own stats, so they're scoped to ITS event type — "who won
+  // the last Masters" next to this year's Masters — not whatever the next-
+  // major countdown happens to be counting down to.
+  const activePriorMajors = useMemo(() => {
+    if (!tournament?.eventType || tournament.eventType === 'other') return [];
+    const anchor = new Date(tournament.startDate || tournament.deadline || Date.now());
+    if (isNaN(anchor)) return [];
+    return majors
+      .filter((m) => m.eventType === tournament.eventType && m.date && new Date(m.date) < anchor)
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [majors, tournament]);
+  const activeLastMajor = activePriorMajors[0] || null;
+  const activeDefendingChampions = activeLastMajor?.winner
+    ? activeLastMajor.winner.split(' & ').map((s) => s.trim()).filter(Boolean)
+    : [];
 
   const mostDecorated = useMemo(() => getMostDecorated(majors), [majors]);
   const streaks = useMemo(() => getLongestStreaks(majors), [majors]);
@@ -68,12 +75,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-32 md:pb-6 space-y-6">
       {countdownDeadline && (
-        <Countdown
-          name={countdownName}
-          deadline={countdownDeadline}
-          defendingChampions={defendingChampions}
-          lastMajorOverall={lastMajorOverall}
-        />
+        <Countdown name={countdownName} deadline={countdownDeadline} />
       )}
 
       {tournament && (
@@ -87,11 +89,29 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
             </p>
           </div>
 
+          {(activeDefendingChampions.length > 0 || activeLastMajor) && (
+            <div className="grid grid-cols-2 gap-3">
+              {activeDefendingChampions.length > 0 && (
+                <Card className="p-4 border-yellow-500/30 bg-yellow-500/5">
+                  <div className="text-[11px] uppercase tracking-wide text-yellow-500/80 mb-1">Defending champ</div>
+                  <div className="text-lg font-semibold text-yellow-400">{activeDefendingChampions.join(' & ')}</div>
+                </Card>
+              )}
+              {activeLastMajor && (
+                <Card className="p-4 border-yellow-500/30 bg-yellow-500/5">
+                  <div className="text-[11px] uppercase tracking-wide text-yellow-500/80 mb-1">Last winner</div>
+                  <div className="text-lg font-semibold text-yellow-400">{activeLastMajor.winner}</div>
+                  <div className="text-xs text-muted mt-0.5">{activeLastMajor.name}</div>
+                </Card>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Stat label="Entries" value={entries.length} />
             <Stat label="Prize pool" value={fmtMoney(structure.pool)} valueClass="text-accent" />
             <Stat label="Round" value={`R${tournament.currentRound || 1}`} />
-            <Stat label="Leader" value={leader ? `+${leader.total}` : '—'} valueClass="text-accent" />
+            <Stat label="Leader" value={leader ? `+${leader.total}` : '—'} valueClass="text-accent" sub={leader?.entry?.name} />
           </div>
 
           <Card className="p-5">
@@ -395,7 +415,7 @@ function KnockoutModal({ knockout, matchRows, onClose }) {
   );
 }
 
-function Countdown({ name, deadline, defendingChampions = [], lastMajorOverall = null }) {
+function Countdown({ name, deadline }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -426,21 +446,6 @@ function Countdown({ name, deadline, defendingChampions = [], lastMajorOverall =
               <div className="text-[10px] text-muted uppercase tracking-wide mt-0.5">{label}</div>
             </div>
           ))}
-        </div>
-      )}
-
-      {(defendingChampions.length > 0 || lastMajorOverall) && (
-        <div className="mt-4 pt-3 border-t border-border space-y-0.5">
-          {defendingChampions.length > 0 && (
-            <div className="text-xs text-muted">
-              Defending champ: <span className="text-text">{defendingChampions.join(' & ')}</span>
-            </div>
-          )}
-          {lastMajorOverall && (
-            <div className="text-xs text-muted">
-              Last winner: <span className="text-text">{lastMajorOverall.winner}</span> — {lastMajorOverall.name}
-            </div>
-          )}
         </div>
       )}
     </Card>

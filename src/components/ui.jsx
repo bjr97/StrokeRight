@@ -27,10 +27,11 @@ export function Card({ children, className = '', onClick }) {
   );
 }
 
-export function Stat({ label, value, valueClass = '' }) {
+export function Stat({ label, value, valueClass = '', sub }) {
   return (
     <Card className="px-4 py-3">
       <div className={`text-2xl font-semibold tabular-nums ${valueClass}`}>{value}</div>
+      {sub && <div className="text-xs text-text mt-0.5 truncate">{sub}</div>}
       <div className="text-xs text-muted uppercase tracking-wide mt-0.5">{label}</div>
     </Card>
   );
