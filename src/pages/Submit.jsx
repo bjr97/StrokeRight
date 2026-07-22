@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { storage, keys } from '../lib/storage.js';
-import { Card, Button, Input, TierDot, Pill, alertAsync } from '../components/ui.jsx';
+import { storage, keys, refresh } from '../lib/storage.js';
+import { Card, Button, Input, Select, TierDot, Pill, alertAsync } from '../components/ui.jsx';
 import { nextTurn, isDraftComplete, takenGolferIds, computeMatchResult } from '../lib/matches.js';
 
 export default function Submit({ tournament, golfers, entries, session, refreshAll }) {
@@ -187,6 +187,22 @@ function EntryCard({ entry, golfers }) {
   );
 }
 
+// All names ever seen across every tournament's entries + matches — the
+// all-time pool roster. No accounts in this app, so this is the only
+// registry of "known names" to pick an opponent from.
+function allKnownNames(excludeNameLower) {
+  const entryNames = storage.list('entries:').flatMap((k) => storage.get(k) || []).map((e) => e.name);
+  const matchNames = storage.list('matches:').flatMap((k) => storage.get(k) || []).flatMap((m) => [m.challengerName, m.opponentName]);
+  const seen = new Map(); // lowercase -> first-seen casing
+  for (const n of [...entryNames, ...matchNames]) {
+    if (!n) continue;
+    const key = n.toLowerCase();
+    if (key === excludeNameLower || seen.has(key)) continue;
+    seen.set(key, n);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
 // 1v1 matches: two players draft 6 golfers each (5 starters + 1 extra) via
 // an async snake draft against this tournament's own field. No accounts in
 // this app — like everything else here, matches are name-based on the
@@ -195,23 +211,26 @@ function MatchesSection({ tournament, golfers, session, refreshAll, deadlinePass
   const matches = storage.get(keys.matches(tournament.id)) || [];
   const myName = session.name.toLowerCase();
   const myMatches = matches.filter(
-    (m) => m.challengerName.toLowerCase() === myName || m.opponentName.toLowerCase() === myName
+    (m) => m.challengerName.toLowerCase() === myName || (m.opponentName && m.opponentName.toLowerCase() === myName)
   );
+  const openChallenges = matches.filter(
+    (m) => m.status === 'proposed' && !m.opponentName && m.challengerName.toLowerCase() !== myName
+  );
+  const knownNames = allKnownNames(myName);
 
+  const [mode, setMode] = useState('specific'); // 'specific' | 'open'
   const [opponentName, setOpponentName] = useState('');
   const [amount, setAmount] = useState('');
   const [proposed, setProposed] = useState(false);
 
-  async function propose() {
-    const name = opponentName.trim();
-    if (!name) return alertAsync('Enter an opponent name.');
-    if (name.toLowerCase() === myName) return alertAsync("You can't challenge yourself.");
+  function propose() {
+    if (mode === 'specific' && !opponentName) return alertAsync('Pick an opponent.');
     if (!amount || Number(amount) <= 0) return alertAsync('Enter a $ amount greater than 0.');
 
     const m = {
       id: 'm' + Date.now().toString(36),
       challengerName: session.name,
-      opponentName: name,
+      opponentName: mode === 'specific' ? opponentName : null,
       amount: Number(amount),
       status: 'proposed',
       firstPicker: null,
@@ -226,14 +245,49 @@ function MatchesSection({ tournament, golfers, session, refreshAll, deadlinePass
     refreshAll();
   }
 
-  function respond(match, accept) {
-    const updated = matches.map((m) => {
-      if (m.id !== match.id) return m;
-      if (!accept) return { ...m, status: 'declined' };
-      return { ...m, status: 'accepted', firstPicker: Math.random() < 0.5 ? 'challenger' : 'opponent' };
-    });
+  function declineMatch(match) {
+    const updated = matches.map((m) => (m.id === match.id ? { ...m, status: 'declined' } : m));
     storage.set(keys.matches(tournament.id), updated);
     refreshAll();
+  }
+
+  function cancelMatch(match) {
+    const updated = matches.filter((m) => m.id !== match.id);
+    storage.set(keys.matches(tournament.id), updated);
+    refreshAll();
+  }
+
+  function acceptTargeted(match) {
+    const updated = matches.map((m) =>
+      m.id === match.id ? { ...m, status: 'accepted', firstPicker: Math.random() < 0.5 ? 'challenger' : 'opponent' } : m
+    );
+    storage.set(keys.matches(tournament.id), updated);
+    refreshAll();
+  }
+
+  // Open challenges have no single addressee, so there's a real (if narrow)
+  // race if two people tap Accept close together — re-hydrate from Supabase
+  // and re-check it's still unclaimed immediately before locking it in.
+  async function acceptOpen(match) {
+    await refresh();
+    const fresh = storage.get(keys.matches(tournament.id)) || [];
+    const latest = fresh.find((m) => m.id === match.id);
+    if (!latest || latest.status !== 'proposed' || latest.opponentName) {
+      await alertAsync('Someone else already accepted this challenge.');
+      refreshAll();
+      return;
+    }
+    const updated = fresh.map((m) =>
+      m.id === match.id
+        ? { ...m, opponentName: session.name, status: 'accepted', firstPicker: Math.random() < 0.5 ? 'challenger' : 'opponent' }
+        : m
+    );
+    storage.set(keys.matches(tournament.id), updated);
+    refreshAll();
+  }
+
+  function handleAccept(match) {
+    return match.opponentName ? acceptTargeted(match) : acceptOpen(match);
   }
 
   function pickGolfer(match, golferId) {
@@ -258,11 +312,43 @@ function MatchesSection({ tournament, golfers, session, refreshAll, deadlinePass
             Snake draft, 6 golfers each (5 starters + 1 extra) from this tournament's field. Same scoring rules as
             the main pool. Draft has to finish before the picks deadline, same as everything else here.
           </div>
-          {proposed && <div className="text-xs text-accent">Proposed — waiting for them to accept.</div>}
-          <Input value={opponentName} onChange={(v) => { setOpponentName(v); setProposed(false); }} placeholder="Opponent's name" />
+          {proposed && <div className="text-xs text-accent">Proposed.</div>}
+          <div className="flex gap-1">
+            {[{ value: 'specific', label: 'Challenge someone' }, { value: 'open', label: 'Open to anyone' }].map((o) => (
+              <button
+                key={o.value}
+                onClick={() => { setMode(o.value); setProposed(false); }}
+                className={`px-2.5 py-1 rounded-lg text-xs border transition ${
+                  mode === o.value ? 'bg-accent text-bg border-accent' : 'border-border text-muted hover:text-text'
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          {mode === 'specific' && (
+            <Select
+              value={opponentName}
+              onChange={(v) => { setOpponentName(v); setProposed(false); }}
+              options={[{ value: '', label: '— choose an opponent —' }, ...knownNames.map((n) => ({ value: n, label: n }))]}
+              className="w-full"
+            />
+          )}
           <Input type="number" value={amount} onChange={(v) => { setAmount(v); setProposed(false); }} placeholder="$ amount" />
           <Button onClick={propose}>Propose match</Button>
         </Card>
+      )}
+
+      {!!openChallenges.length && (
+        <div className="space-y-2">
+          <h3 className="text-xs uppercase text-muted tracking-wide">Open challenges</h3>
+          {openChallenges.map((m) => (
+            <Card key={m.id} className="p-3 flex items-center justify-between">
+              <div className="text-sm">{m.challengerName} · ${m.amount} · open to anyone</div>
+              <Button onClick={() => handleAccept(m)}>Accept</Button>
+            </Card>
+          ))}
+        </div>
       )}
 
       {!myMatches.length && <div className="text-sm text-muted">No 1v1 matches yet.</div>}
@@ -275,7 +361,9 @@ function MatchesSection({ tournament, golfers, session, refreshAll, deadlinePass
           tournament={tournament}
           myName={myName}
           deadlinePassed={deadlinePassed}
-          onRespond={(accept) => respond(m, accept)}
+          onAccept={() => handleAccept(m)}
+          onDecline={() => declineMatch(m)}
+          onCancel={() => cancelMatch(m)}
           onPick={(gid) => pickGolfer(m, gid)}
         />
       ))}
@@ -283,13 +371,17 @@ function MatchesSection({ tournament, golfers, session, refreshAll, deadlinePass
   );
 }
 
-function MatchCard({ match, golfers, tournament, myName, deadlinePassed, onRespond, onPick }) {
+function MatchCard({ match, golfers, tournament, myName, deadlinePassed, onAccept, onDecline, onCancel, onPick }) {
   const iAmChallenger = match.challengerName.toLowerCase() === myName;
-  const iAmOpponent = match.opponentName.toLowerCase() === myName;
+  const iAmOpponent = !!match.opponentName && match.opponentName.toLowerCase() === myName;
   const header = (
     <div className="text-sm">
-      <span className="font-medium">{match.challengerName}</span> vs{' '}
-      <span className="font-medium">{match.opponentName}</span>
+      <span className="font-medium">{match.challengerName}</span>{' '}
+      {match.opponentName ? (
+        <>vs <span className="font-medium">{match.opponentName}</span></>
+      ) : (
+        <span className="text-muted">· open challenge</span>
+      )}
       <span className="text-muted"> · ${match.amount}</span>
     </div>
   );
@@ -318,14 +410,19 @@ function MatchCard({ match, golfers, tournament, myName, deadlinePassed, onRespo
     return (
       <Card className="p-4 space-y-2">
         {header}
-        {iAmOpponent ? (
-          <div className="flex gap-2">
-            <Button onClick={() => onRespond(true)}>Accept</Button>
-            <Button variant="ghost" onClick={() => onRespond(false)}>Decline</Button>
+        {iAmChallenger ? (
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-muted">
+              {match.opponentName ? `Waiting for ${match.opponentName} to accept.` : 'Open — waiting for anyone to accept.'}
+            </div>
+            <Button variant="ghost" onClick={onCancel}>Cancel</Button>
           </div>
-        ) : (
-          <div className="text-xs text-muted">Waiting for {match.opponentName} to accept.</div>
-        )}
+        ) : iAmOpponent ? (
+          <div className="flex gap-2">
+            <Button onClick={onAccept}>Accept</Button>
+            <Button variant="ghost" onClick={onDecline}>Decline</Button>
+          </div>
+        ) : null}
       </Card>
     );
   }
