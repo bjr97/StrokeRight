@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { storage, keys } from '../lib/storage.js';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
 import { computeWinProbabilities } from '../lib/winProb.js';
@@ -109,8 +110,27 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
 
   const filtered = list.filter((r) => !filter || r.entry.name.toLowerCase().includes(filter.toLowerCase()));
 
+  // Latest round recap — the "story so far," written by the daily snapshot
+  // cron (api/capture-snapshot.js). Just show whichever round number is
+  // highest among what's been generated; no need to match currentRound
+  // exactly (the cron may lag a live admin round bump by up to a day).
+  const latestRecap = useMemo(() => {
+    const rounds = storage.get(keys.recap(tournament.id))?.rounds || {};
+    const roundNums = Object.keys(rounds).map(Number).filter((n) => Number.isFinite(n));
+    if (!roundNums.length) return null;
+    const latest = Math.max(...roundNums);
+    return { round: latest, text: rounds[String(latest)] };
+  }, [tournament.id]);
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-32 md:pb-6 space-y-4">
+      {latestRecap && (
+        <Card className="p-4">
+          <div className="text-xs text-muted uppercase tracking-wide mb-1">Round {latestRecap.round} recap</div>
+          <div className="text-sm italic">{latestRecap.text}</div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Prize pool" value={fmtMoney(structure.pool)} valueClass="text-accent" />
         <Stat label={`R${tournament.currentRound}`} value={tournament.currentRound ? `Live` : 'Pre-tourney'} valueClass="text-warn" />

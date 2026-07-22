@@ -24,7 +24,8 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   // where possible — a fact already claimed by an earlier (more recent)
   // card is skipped in favor of that major's next-best qualifying fact.
   const recentMajors = useMemo(
-    () => withUniqueHighlights([...majors].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4)),
+    () => withUniqueHighlights([...majors].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4))
+      .map((m) => ({ ...m, recap: storage.get(keys.recap(m.id))?.final || null })),
     [majors]
   );
 
@@ -538,6 +539,9 @@ function RecentMajorCard({ m }) {
         <button onClick={() => setExpanded((e) => !e)} className="text-xs text-accent mt-2">
           {expanded ? '▴ Hide' : '▾ View'} score breakdown
         </button>
+      )}
+      {m.recap && (
+        <div className="text-xs text-muted mt-2 pt-2 border-t border-border italic">{m.recap}</div>
       )}
       {canExpand && expanded && (
         <div className="mt-2 pt-2 border-t border-border space-y-2">

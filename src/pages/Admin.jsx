@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { storage, keys, listTournaments, setActiveTournamentId, getActiveTournamentId } from '../lib/storage.js';
 import { seedDemoMasters } from '../lib/seedData.js';
 import { finalStandings } from '../lib/scoring.js';
+import { buildMajors, getStrokerWins, getDefendingChampions } from '../lib/majors.js';
 import { fmtMoney } from '../lib/payouts.js';
 import { Card, Button, Input, Select, Pill, TierDot, TIER_COLORS, fmtToPar, confirmAsync, alertAsync } from '../components/ui.jsx';
 import { EVENT_TYPES, autoTournamentName, fixedCourse, eventTypeLabel, eventTypeEmoji } from '../lib/eventTypes.js';
@@ -572,6 +573,60 @@ function TierManager({ tournament, golfers, refreshAll }) {
   );
 }
 
+// Fire-and-forget call to the serverless endpoint that generates the final
+// post-tournament recap (api/generate-recap.js) — builds the "storylines"
+// context (career win counts, back-to-back, defending champion) from
+// majors.js's own helpers, same data already used for the Home page's
+// champ tiles and Fun Stats. Never blocks or throws into the caller; a
+// failure here (missing API key, Anthropic error) just means no recap
+// shows up, not a broken "mark complete" flow.
+function requestFinalRecap({ tournament, fs, winnerNames }) {
+  try {
+    const priorMajors = buildMajors(); // doesn't include this tournament's history row yet
+    const strokerWins = getStrokerWins();
+    const winnerList = winnerNames.split(' & ').map((s) => s.trim()).filter(Boolean);
+
+    const storyContext = [];
+    for (const w of winnerList) {
+      const priorWinCount = (strokerWins.get(w) || []).length;
+      if (priorWinCount > 0) {
+        storyContext.push(`${w} has won ${priorWinCount} major${priorWinCount === 1 ? '' : 's'} before this one.`);
+      }
+    }
+    const lastMajor = [...priorMajors].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+    if (lastMajor?.winner) {
+      const lastWinners = lastMajor.winner.split(' & ').map((s) => s.trim());
+      const repeat = winnerList.find((w) => lastWinners.includes(w));
+      if (repeat) storyContext.push(`${repeat} also won the last major played (${lastMajor.name}) — that's back-to-back.`);
+    }
+    const defenders = getDefendingChampions({ eventType: tournament.eventType, anchorDate: tournament.startDate }, priorMajors);
+    if (defenders.length) {
+      const repeated = winnerList.some((w) => defenders.includes(w));
+      storyContext.push(`Defending ${eventTypeLabel(tournament.eventType)} champion: ${defenders.join(' & ')}.${repeated ? ' They just defended their title!' : ''}`);
+    }
+
+    const winningTeam = (fs.winners[0]?.scored || []).map((s) => ({ name: s.golfer.name, points: s.points }));
+
+    fetch('/api/generate-recap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tournamentId: tournament.id,
+        tournamentName: tournament.name,
+        eventTypeLabel: eventTypeLabel(tournament.eventType),
+        winnerNames,
+        team: winningTeam,
+        totalPoints: fs.points,
+        prize: fs.prize,
+        entryCount: fs.ranked.length,
+        storyContext,
+      }),
+    }).catch((err) => console.error('[recap] final recap request failed:', err));
+  } catch (err) {
+    console.error('[recap] building recap context failed:', err);
+  }
+}
+
 function LiveControls({ tournament, golfers, refreshAll }) {
   const [round, setRound] = useState(tournament.currentRound);
   const [cutLine, setCutLine] = useState(tournament.cutLine ?? '');
@@ -618,6 +673,7 @@ function LiveControls({ tournament, golfers, refreshAll }) {
       points,
       entries: entries.length,
       prize,
+      eventType: tournament.eventType,
     };
     const history = storage.get(keys.history) || [];
     storage.set(keys.history, [record, ...history.filter((h) => h.id !== record.id)]);
@@ -627,6 +683,8 @@ function LiveControls({ tournament, golfers, refreshAll }) {
 
     refreshAll();
     await alertAsync('Tournament marked complete and added to History.');
+
+    requestFinalRecap({ tournament, fs, winnerNames });
   }
 
   async function reactivate() {

@@ -74,6 +74,7 @@ export const keys = {
   matches:       (id) => `matches:${id}`,
   scores:        (id) => `scores:${id}`,
   snapshots:     (id) => `snapshots:${id}`,
+  recap:         (id) => `recap:${id}`, // { rounds: { "1": "text", ... }, final: "text" | null } — read-only, written by the recap serverless functions
   history:       'history',
   adminCode:     'admin-code',
   activeTournId: 'active-tournament-id',
@@ -118,7 +119,7 @@ async function hydrate() {
   }
 
   console.log('[StrokeRight] hydrating from Supabase…');
-  const [tournR, golfR, entR, matchR, snapR, histR, cfgR] = await Promise.all([
+  const [tournR, golfR, entR, matchR, snapR, histR, cfgR, recapR] = await Promise.all([
     supabase.from('tournaments').select('*'),
     supabase.from('golfers').select('*'),
     supabase.from('entries').select('*').order('created_at', { ascending: true }),
@@ -126,11 +127,12 @@ async function hydrate() {
     supabase.from('snapshots').select('*'),
     supabase.from('history').select('*').order('date', { ascending: false }),
     supabase.from('app_config').select('*'),
+    supabase.from('recaps').select('*'),
   ]);
 
   for (const [label, r] of [
     ['tournaments', tournR], ['golfers', golfR], ['entries', entR], ['matches', matchR],
-    ['snapshots', snapR], ['history', histR], ['app_config', cfgR],
+    ['snapshots', snapR], ['history', histR], ['app_config', cfgR], ['recaps', recapR],
   ]) {
     if (r.error) {
       console.error(`[StrokeRight] ${label} fetch error:`, r.error);
@@ -160,6 +162,9 @@ async function hydrate() {
   cache.set('history', (histR.data || []).map(fromHistoryRow));
   for (const row of cfgR.data || []) {
     cache.set(row.key, row.value);
+  }
+  for (const row of recapR.data || []) {
+    cache.set(`recap:${row.tournament_id}`, { rounds: row.rounds || {}, final: row.final || null });
   }
 
   bootstrapped = true;

@@ -236,8 +236,96 @@ export default async function handler(req, res) {
       if (error) throw error;
     }
 
-    res.status(200).json({ ok: true, tournamentId, round: espnRound, entriesSnapshot: ranked.length, golfersSnapshot: golferRows.length });
+    // Round recap — a short "story beat" for whatever round just got
+    // snapshotted, feeding in the prior round's text for continuity and a
+    // handful of stroker-history facts (defending champ, career win counts)
+    // so the AI can call out back-to-back bids etc. Best-effort: any
+    // failure here (missing key, missing table, Anthropic error) is logged
+    // and swallowed — it must never take down the actual snapshot capture.
+    let recap = null;
+    try {
+      recap = await generateRoundRecap({ supabase, tRow, tournamentId, espnRound, ranked, entryRows: entryRows || [] });
+    } catch (err) {
+      console.error('[recap] round recap failed:', err?.message || err);
+    }
+
+    res.status(200).json({ ok: true, tournamentId, round: espnRound, entriesSnapshot: ranked.length, golfersSnapshot: golferRows.length, recap: !!recap });
   } catch (err) {
     res.status(500).json({ error: String(err?.message || err) });
   }
+}
+
+const ANTHROPIC_MODEL = 'claude-sonnet-5';
+
+async function generateRoundRecap({ supabase, tRow, tournamentId, espnRound, ranked, entryRows }) {
+  if (!process.env.ANTHROPIC_API_KEY || !ranked.length) return null;
+
+  const { data: existing } = await supabase.from('recaps').select('rounds').eq('tournament_id', tournamentId).maybeSingle();
+  const rounds = existing?.rounds || {};
+  if (rounds[String(espnRound)]) return null; // already generated for this round — idempotent
+
+  const nameById = new Map(entryRows.map((e) => [e.id, e.name]));
+  const leaders = ranked.slice(0, 5).map((r) => ({ name: nameById.get(r.entryId) || '?', total: r.total, rank: r.rank }));
+
+  // Stroker-history context: every past major's winner (history table is
+  // written for every tournament once marked completed), used to flag
+  // career win counts and same-event defending champions for whoever's
+  // currently leading.
+  const { data: historyRows } = await supabase.from('history').select('name,date,winner,event_type').order('date', { ascending: false });
+  const winCounts = new Map(); // lowercase name -> count
+  for (const h of historyRows || []) {
+    for (const w of (h.winner || '').split('&').map((s) => s.trim()).filter(Boolean)) {
+      const k = w.toLowerCase();
+      winCounts.set(k, (winCounts.get(k) || 0) + 1);
+    }
+  }
+  const defendingChamp = (historyRows || []).find((h) => h.event_type === tRow.event_type && h.name !== tRow.name);
+
+  const storyLines = [];
+  for (const l of leaders) {
+    const priorWins = winCounts.get(l.name.toLowerCase()) || 0;
+    if (priorWins > 0) storyLines.push(`${l.name} has ${priorWins} career major win${priorWins === 1 ? '' : 's'} coming into this one.`);
+  }
+  if (defendingChamp) storyLines.push(`Defending champion of this event: ${defendingChamp.winner} (${defendingChamp.name}).`);
+
+  const prevRoundText = rounds[String(espnRound - 1)];
+
+  const leaderLines = leaders.map((l) => `${l.rank}. ${l.name} (${l.total >= 0 ? '+' : ''}${l.total} pts)`).join('\n');
+
+  const prompt = `You're writing a short "story so far" update for a fantasy golf pool's group chat, after Round ${espnRound} of ${tRow.name}. Casual, sharp, a little fun — not corporate. 2-4 sentences, plain prose, no headers or markdown.
+
+Current standings (top 5):
+${leaderLines}
+${storyLines.length ? `\nStorylines to weave in if genuinely interesting (skip anything forced):\n${storyLines.map((s) => `- ${s}`).join('\n')}` : ''}
+${prevRoundText ? `\nWhat you wrote after the previous round (build on this, don't just repeat it):\n"${prevRoundText}"` : ''}
+
+Write the Round ${espnRound} update now.`;
+
+  const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 300,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+  if (!aiRes.ok) throw new Error(`Anthropic ${aiRes.status}: ${(await aiRes.text().catch(() => '')).slice(0, 300)}`);
+  const aiJson = await aiRes.json();
+  const text = aiJson?.content?.[0]?.text?.trim();
+  if (!text) throw new Error('Anthropic returned no text.');
+
+  const nextRounds = { ...rounds, [String(espnRound)]: text };
+  const { error } = await supabase.from('recaps').upsert({
+    tournament_id: tournamentId,
+    rounds: nextRounds,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'tournament_id' });
+  if (error) throw error;
+
+  return text;
 }

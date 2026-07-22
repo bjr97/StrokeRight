@@ -68,11 +68,13 @@ export default function History({ session, refreshAll }) {
   // `majors` array, so picking an event type / year filters everything at
   // once rather than needing separate logic per tab.
   const majors = useMemo(() => {
-    return allMajors.filter((m) => {
-      if (eventTypeFilter !== 'all' && (m.eventType || 'other') !== eventTypeFilter) return false;
-      if (yearFilter !== 'all' && (m.date || '').slice(0, 4) !== yearFilter) return false;
-      return true;
-    });
+    return allMajors
+      .filter((m) => {
+        if (eventTypeFilter !== 'all' && (m.eventType || 'other') !== eventTypeFilter) return false;
+        if (yearFilter !== 'all' && (m.date || '').slice(0, 4) !== yearFilter) return false;
+        return true;
+      })
+      .map((m) => ({ ...m, recap: storage.get(keys.recap(m.id))?.final || null }));
   }, [allMajors, eventTypeFilter, yearFilter]);
 
   const sortedMajors = useMemo(() => {
@@ -678,6 +680,9 @@ function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
         <button onClick={onToggleExpand} className="text-xs text-accent mt-2">
           {expanded ? '▴ Hide' : '▾ View'} all {m.entryCount} entries
         </button>
+      )}
+      {m.recap && (
+        <div className="text-xs text-muted mt-2 pt-2 border-t border-border italic">{m.recap}</div>
       )}
       {m.fullData && expanded && (
         <div className="mt-2 pt-2 border-t border-border space-y-1">
