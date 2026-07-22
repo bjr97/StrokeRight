@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { storage, keys } from '../lib/storage.js';
+import { storage, keys, listTournaments } from '../lib/storage.js';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
-import { buildMajors, withUniqueHighlights, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, trophyCaseEmojis, GRAND_SLAM_TYPES } from '../lib/majors.js';
+import { buildMajors, withUniqueHighlights, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, trophyCaseEmojis, GRAND_SLAM_TYPES, getStrokerRows, getBestROI } from '../lib/majors.js';
 import { buildMatchLeaderboard, knockoutKing } from '../lib/matchStats.js';
 import { eventTypeLabel, eventTypeEmoji } from '../lib/eventTypes.js';
 import { fmtDate } from '../lib/format.js';
@@ -55,7 +55,9 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   ) || { count: 0, pct: 0, types: [] };
   const matchRows = useMemo(() => buildMatchLeaderboard(), [majors]);
   const knockout = useMemo(() => knockoutKing(matchRows), [matchRows]);
-  const hasRecords = !!(mostDecorated || streaks.overall || streaks.sameEvent || grandSlam.leaders.length || knockout);
+  const strokerRows = useMemo(() => getStrokerRows(majors, listTournaments()), [majors]);
+  const bestBrain = useMemo(() => getBestROI(strokerRows), [strokerRows]);
+  const hasRecords = !!(mostDecorated || streaks.overall || streaks.sameEvent || grandSlam.leaders.length || knockout || bestBrain);
 
   const strokerWins = getStrokerWins(); // cheap; always fresh
   const [trophyFor, setTrophyFor] = useState(null); // { label, wins } or null — single-stroker icon click
@@ -63,6 +65,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   const [showStreakModal, setShowStreakModal] = useState(false);
   const [showGrandSlamModal, setShowGrandSlamModal] = useState(false);
   const [showKnockoutModal, setShowKnockoutModal] = useState(false);
+  const [showBestBrainModal, setShowBestBrainModal] = useState(false);
 
   let ranked = [], structure = null, leader = null, myEntries = [];
   if (tournament) {
@@ -237,6 +240,16 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
                 </div>
               </Card>
             )}
+
+            {bestBrain && (
+              <Card className="p-4" onClick={() => setShowBestBrainModal(true)}>
+                <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Best brain</div>
+                <div className="text-lg font-semibold">{bestBrain.rows.map((r) => r.name).join(' & ')}</div>
+                <div className="text-xs text-muted mt-0.5">
+                  {Math.round(bestBrain.roi * 100)}% ROI (full-data majors)
+                </div>
+              </Card>
+            )}
           </div>
         </div>
       )}
@@ -262,6 +275,9 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
       )}
       {showKnockoutModal && (
         <KnockoutModal knockout={knockout} matchRows={matchRows} onClose={() => setShowKnockoutModal(false)} />
+      )}
+      {showBestBrainModal && (
+        <BestBrainModal bestBrain={bestBrain} onClose={() => setShowBestBrainModal(false)} />
       )}
     </div>
   );
@@ -418,6 +434,33 @@ function KnockoutModal({ knockout, matchRows, onClose }) {
         </div>
         <div className="text-xs text-muted mt-3 pt-3 border-t border-border">
           Full 1v1 stats live under History → 1v1 Leaderboard.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BestBrainModal({ bestBrain, onClose }) {
+  if (!bestBrain) return null;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-medium">Best brain</div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        <div className="space-y-3">
+          {bestBrain.rows.map((r, i) => (
+            <div key={r.name} className={i > 0 ? 'pt-3 border-t border-border' : ''}>
+              <div className="text-sm font-medium mb-1">{r.name}</div>
+              <div className="text-xs text-muted">
+                <span className="text-accent">{Math.round(r.roi * 100)}% ROI</span> · {r.entries} entries · {fmtMoney(r.feesPaid)} spent · {fmtMoney(r.moneyWon)} won
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="text-xs text-muted mt-3 pt-3 border-t border-border">
+          ROI = (money earned − entry fees) ÷ entry fees, across full-data majors only.
         </div>
       </div>
     </div>

@@ -366,6 +366,123 @@ export function getStrokerWins() {
   return wins;
 }
 
+// "2nd", "T3", etc. — prefixes a T when someone else shares that rank in the
+// same major, matching the tie-handling convention used everywhere else.
+export function formatRank(rank, rankedList) {
+  const tied = (rankedList || []).filter((x) => x.rank === rank).length > 1;
+  const mod100 = rank % 100;
+  const suffix = mod100 >= 11 && mod100 <= 13 ? 'th'
+    : rank % 10 === 1 ? 'st'
+    : rank % 10 === 2 ? 'nd'
+    : rank % 10 === 3 ? 'rd' : 'th';
+  return `${tied ? 'T' : ''}${rank}${suffix}`;
+}
+
+/**
+ * Per-stroker financial rollup: wins, $ won (incl. non-winning paid
+ * finishes), entries, fees paid, ROI, and average pick odds. Wins/$ won
+ * count both full-data and summary-only majors; entries/fees/ROI/podiums
+ * only reflect full-data majors — that's the only place every stroker's
+ * entry and every paid position is known, not just the winner's.
+ * Shared by the History page's Stroker leaderboard and the Home page's
+ * "Best Brain" (highest ROI) pool record, so the number can't drift
+ * between the two places it's shown.
+ */
+export function getStrokerRows(majors, allTournaments) {
+  const legacy = new Map(); // name -> { wins, moneyWon } — from summary-only majors
+  const full = new Map();   // name -> { entries, feesPaid, winsFull, podiumOnly, moneyFull, oddsSum, oddsCount, podiumFinishes }
+
+  for (const m of majors) {
+    if (m.fullData) continue;
+    const winnerNames = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
+    if (winnerNames.length && m.prize != null) {
+      const share = m.prize / winnerNames.length;
+      for (const w of winnerNames) {
+        const rec = legacy.get(w) || { wins: 0, moneyWon: 0 };
+        rec.wins += 1;
+        rec.moneyWon += share;
+        legacy.set(w, rec);
+      }
+    }
+  }
+
+  for (const t of allTournaments) {
+    if (t.status !== 'completed') continue;
+    const tGolfers = storage.get(keys.golfers(t.id)) || [];
+    const tEntries = storage.get(keys.entries(t.id)) || [];
+    if (!tEntries.length) continue;
+    const golferLookup = new Map(tGolfers.map((g) => [g.id, g]));
+    const major = majors.find((m) => m.id === t.id);
+    if (!major) continue;
+
+    for (const e of tEntries) {
+      const rec = full.get(e.name) || { entries: 0, feesPaid: 0, winsFull: 0, podiumOnly: 0, moneyFull: 0, oddsSum: 0, oddsCount: 0, podiumFinishes: [] };
+      rec.entries += 1;
+      rec.feesPaid += t.entryFee || 0;
+      full.set(e.name, rec);
+      for (const gid of e.golferIds || []) {
+        const g = golferLookup.get(gid);
+        if (!g) continue;
+        const oddsNum = oddsToNum(g.odds);
+        if (oddsNum >= 0) {
+          rec.oddsSum += oddsNum;
+          rec.oddsCount += 1;
+        }
+      }
+    }
+
+    for (const r of major.ranked || []) {
+      const payout = major.payouts.get(r.entry.id) || 0;
+      if (payout <= 0) continue;
+      const rec = full.get(r.entry.name);
+      if (!rec) continue;
+      rec.moneyFull += payout;
+      if (r.rank === 1) {
+        rec.winsFull += 1;
+      } else {
+        rec.podiumOnly += 1;
+        rec.podiumFinishes.push({
+          major: major.name,
+          date: major.date,
+          eventType: major.eventType,
+          rank: formatRank(r.rank, major.ranked),
+          payout,
+          points: r.total,
+        });
+      }
+    }
+  }
+
+  const names = new Set([...legacy.keys(), ...full.keys()]);
+  return [...names].map((name) => {
+    const l = legacy.get(name) || { wins: 0, moneyWon: 0 };
+    const f = full.get(name);
+    // ROI = (gain - cost) / cost — net return, not the raw payout multiple.
+    const roi = f && f.feesPaid > 0 ? (f.moneyFull - f.feesPaid) / f.feesPaid : null;
+    const avgPickOdds = f && f.oddsCount > 0 ? f.oddsSum / f.oddsCount : null;
+    return {
+      name,
+      wins: l.wins + (f?.winsFull || 0),
+      moneyWon: l.moneyWon + (f?.moneyFull || 0),
+      podiumOnly: f ? f.podiumOnly : null,
+      podiumFinishes: f ? f.podiumFinishes : [],
+      entries: f ? f.entries : null,
+      feesPaid: f ? f.feesPaid : null,
+      roi,
+      avgPickOdds,
+    };
+  });
+}
+
+/** Stroker(s) with the highest ROI, among those with at least one full-data entry. Null if nobody qualifies. */
+export function getBestROI(strokerRows) {
+  const withRoi = strokerRows.filter((r) => r.roi != null && r.entries > 0);
+  if (!withRoi.length) return null;
+  const max = Math.max(...withRoi.map((r) => r.roi));
+  const leaders = withRoi.filter((r) => r.roi === max);
+  return { rows: leaders, roi: max };
+}
+
 // Fixed display order so the emoji string reads the same for everyone
 // regardless of the order they actually won things in.
 const TROPHY_ORDER = ['players', 'masters', 'pga', 'us_open', 'open', 'wm_open'];

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { storage, keys, listTournaments } from '../lib/storage.js';
-import { buildMajors, getStrokerWins, trophyCaseEmojis } from '../lib/majors.js';
+import { buildMajors, getStrokerWins, trophyCaseEmojis, formatRank, getStrokerRows } from '../lib/majors.js';
 import { buildMatchLeaderboard, highRoller, untouchable, biggestRivalry } from '../lib/matchStats.js';
 import { fmtMoney as fm } from '../lib/payouts.js';
 import { fmtDate } from '../lib/format.js';
@@ -16,18 +16,6 @@ const TABS = [
   { key: 'golfers', label: 'Golfer trends' },
   { key: 'fun', label: 'Fun stats' },
 ];
-
-// "2nd", "T3", etc. — prefixes a T when someone else shares that rank in the
-// same major, matching the tie-handling convention used everywhere else.
-function formatRank(rank, rankedList) {
-  const tied = (rankedList || []).filter((x) => x.rank === rank).length > 1;
-  const mod100 = rank % 100;
-  const suffix = mod100 >= 11 && mod100 <= 13 ? 'th'
-    : rank % 10 === 1 ? 'st'
-    : rank % 10 === 2 ? 'nd'
-    : rank % 10 === 3 ? 'rd' : 'th';
-  return `${tied ? 'T' : ''}${rank}${suffix}`;
-}
 
 export default function History({ session, refreshAll }) {
   const [tab, setTab] = useState('majors');
@@ -102,8 +90,8 @@ export default function History({ session, refreshAll }) {
   // majors — that's the only place we know every stroker's entry and every
   // paid position, not just the winner's.
   const { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut } = useMemo(() => {
-    const legacy = new Map(); // name -> { wins, moneyWon } — from summary-only majors
-    const full = new Map();   // name -> { entries, feesPaid, winsFull, podiumOnly, moneyFull }
+    const strokerRows = getStrokerRows(majors, allTournaments);
+
     const golferCounts = new Map();
     const golferWinCounts = new Map();  // name -> { count, tier } — winning-team appearances
     const golferScoreSum = new Map();   // name -> { sum, majorsCount, tier } — real strokesToPar, once per event
@@ -111,20 +99,6 @@ export default function History({ session, refreshAll }) {
     let longestShot = null; // { name, odds, oddsNum } — worst odds ever actually picked
     let biggestFavoriteToMissCut = null; // { name, odds, oddsNum, major } — shortest odds among picks that still missed the cut
     let totalPicksLogged = 0;
-
-    for (const m of majors) {
-      if (m.fullData) continue;
-      const winnerNames = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
-      if (winnerNames.length && m.prize != null) {
-        const share = m.prize / winnerNames.length;
-        for (const w of winnerNames) {
-          const rec = legacy.get(w) || { wins: 0, moneyWon: 0 };
-          rec.wins += 1;
-          rec.moneyWon += share;
-          legacy.set(w, rec);
-        }
-      }
-    }
 
     for (const t of allTournaments) {
       if (t.status !== 'completed') continue;
@@ -136,10 +110,6 @@ export default function History({ session, refreshAll }) {
       if (!major) continue;
 
       for (const e of tEntries) {
-        const rec = full.get(e.name) || { entries: 0, feesPaid: 0, winsFull: 0, podiumOnly: 0, moneyFull: 0, oddsSum: 0, oddsCount: 0, podiumFinishes: [] };
-        rec.entries += 1;
-        rec.feesPaid += t.entryFee || 0;
-        full.set(e.name, rec);
         for (const gid of e.golferIds || []) {
           const g = golferLookup.get(gid);
           if (!g) continue;
@@ -151,10 +121,6 @@ export default function History({ session, refreshAll }) {
           const oddsNum = oddsToNum(g.odds);
           if (oddsNum >= 0 && (!longestShot || oddsNum > longestShot.oddsNum)) {
             longestShot = { name: g.name, odds: g.odds, oddsNum };
-          }
-          if (oddsNum >= 0) {
-            rec.oddsSum += oddsNum;
-            rec.oddsCount += 1;
           }
         }
       }
@@ -208,50 +174,7 @@ export default function History({ session, refreshAll }) {
           }
         }
       }
-
-      // Every entry that actually got paid — not just the winning rank.
-      // This is how a runner-up who cashed a payout but never won shows up.
-      for (const r of major.ranked || []) {
-        const payout = major.payouts.get(r.entry.id) || 0;
-        if (payout <= 0) continue;
-        const rec = full.get(r.entry.name);
-        if (!rec) continue;
-        rec.moneyFull += payout;
-        if (r.rank === 1) {
-          rec.winsFull += 1;
-        } else {
-          rec.podiumOnly += 1;
-          rec.podiumFinishes.push({
-            major: major.name,
-            date: major.date,
-            eventType: major.eventType,
-            rank: formatRank(r.rank, major.ranked),
-            payout,
-            points: r.total,
-          });
-        }
-      }
     }
-
-    const names = new Set([...legacy.keys(), ...full.keys()]);
-    const strokerRows = [...names].map((name) => {
-      const l = legacy.get(name) || { wins: 0, moneyWon: 0 };
-      const f = full.get(name);
-      // ROI = (gain - cost) / cost — net return, not the raw payout multiple.
-      const roi = f && f.feesPaid > 0 ? (f.moneyFull - f.feesPaid) / f.feesPaid : null;
-      const avgPickOdds = f && f.oddsCount > 0 ? f.oddsSum / f.oddsCount : null;
-      return {
-        name,
-        wins: l.wins + (f?.winsFull || 0),
-        moneyWon: l.moneyWon + (f?.moneyFull || 0),
-        podiumOnly: f ? f.podiumOnly : null,
-        podiumFinishes: f ? f.podiumFinishes : [],
-        entries: f ? f.entries : null,
-        feesPaid: f ? f.feesPaid : null,
-        roi,
-        avgPickOdds,
-      };
-    });
 
     const golferRows = [...golferCounts.entries()]
       .map(([name, r]) => ({ name, count: r.count, tier: r.tier }))
