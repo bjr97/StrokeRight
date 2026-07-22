@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recha
 import { storage, keys, listTournaments } from '../lib/storage.js';
 import { buildMajors, getStrokerWins, trophyCaseEmojis, formatRank, getStrokerRows } from '../lib/majors.js';
 import { buildMatchLeaderboard, highRoller, untouchable, biggestRivalry, getPlayerMatches } from '../lib/matchStats.js';
+import { scoreGolfer } from '../lib/scoring.js';
 import { fmtMoney as fm } from '../lib/payouts.js';
 import { fmtDate } from '../lib/format.js';
 import { oddsToNum } from '../lib/odds.js';
@@ -96,7 +97,7 @@ export default function History({ session, refreshAll }) {
 
     const golferCounts = new Map();
     const golferWinCounts = new Map();  // name -> { count, tier } — winning-team appearances
-    const golferScoreSum = new Map();   // name -> { sum, majorsCount, tier } — real strokesToPar, once per event
+    const golferScoreSum = new Map();   // name -> { sum, majorsCount, tier } — our fantasy points, once per event
     const golferCutTally = new Map();   // name -> { madeCut, missedCut, tier } — once per event, like golferScoreSum
     let longestShot = null; // { name, odds, oddsNum } — worst odds ever actually picked
     let biggestFavoriteToMissCut = null; // { name, odds, oddsNum, major } — shortest odds among picks that still missed the cut
@@ -110,6 +111,12 @@ export default function History({ session, refreshAll }) {
       const golferLookup = new Map(tGolfers.map((g) => [g.id, g]));
       const major = majors.find((m) => m.id === t.id);
       if (!major) continue;
+      const scoreOpts = {
+        tieredPenaltyEnabled: t.tieredPenaltyEnabled,
+        cutLine: t.cutLine,
+        currentRound: t.currentRound,
+        cutBonusPoints: t.cutBonusPoints,
+      };
 
       for (const e of tEntries) {
         for (const gid of e.golferIds || []) {
@@ -145,21 +152,20 @@ export default function History({ session, refreshAll }) {
         }
       }
 
-      // Cumulative real score — each golfer's own strokesToPar for this event,
-      // added once regardless of how many entries drafted them (it's their
-      // score, not the pool's fantasy points).
+      // Cumulative fantasy score — each golfer's points under our own scoring
+      // rules (scoreGolfer: cut bonus/penalty, tiered penalty, winner bonus)
+      // for this event, added once regardless of how many entries drafted
+      // them — it's the golfer's own scoring line, not the pool's total.
       const pickedIdsThisMajor = new Set();
       for (const e of tEntries) for (const gid of e.golferIds || []) pickedIdsThisMajor.add(gid);
       for (const gid of pickedIdsThisMajor) {
         const g = golferLookup.get(gid);
         if (!g) continue;
-        if (typeof g.strokesToPar === 'number') {
-          const srec = golferScoreSum.get(g.name) || { sum: 0, majorsCount: 0, tier: g.tier };
-          srec.sum += g.strokesToPar;
-          srec.majorsCount += 1;
-          srec.tier = g.tier;
-          golferScoreSum.set(g.name, srec);
-        }
+        const srec = golferScoreSum.get(g.name) || { sum: 0, majorsCount: 0, tier: g.tier };
+        srec.sum += scoreGolfer(g, scoreOpts).points;
+        srec.majorsCount += 1;
+        srec.tier = g.tier;
+        golferScoreSum.set(g.name, srec);
         // Cut tally + "biggest favorite to miss the cut" — both keyed off
         // made_cut/missed_cut only (withdrawn/playing don't answer either
         // question), once per golfer per major regardless of pick count.
@@ -188,10 +194,10 @@ export default function History({ session, refreshAll }) {
       .sort((a, b) => b.count - a.count)
       .slice(0, 15);
 
-    // Most under par (best real-life performance) first.
+    // Highest cumulative fantasy points first.
     const cumulativeScoreRows = [...golferScoreSum.entries()]
       .map(([name, r]) => ({ name, sum: r.sum, majorsCount: r.majorsCount, tier: r.tier }))
-      .sort((a, b) => a.sum - b.sum)
+      .sort((a, b) => b.sum - a.sum)
       .slice(0, 15);
 
     return { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut };
@@ -601,8 +607,9 @@ export default function History({ session, refreshAll }) {
             <div className="text-sm font-medium">All-time cumulative score</div>
             <GolferScoreList rows={cumulativeScoreRows} />
             <p className="text-xs text-muted">
-              Each golfer's own real strokes-to-par, added once per event they were picked in — not the pool's
-              fantasy points, and not multiplied by how many entries drafted them. Lower is better.
+              Each golfer's own fantasy points under our scoring rules (cut bonus/penalty, tiered penalty, winner
+              bonus), added once per event they were picked in — not multiplied by how many entries drafted them.
+              Higher is better.
             </p>
           </div>
 
@@ -1152,7 +1159,7 @@ function GolferScoreList({ rows }) {
                 </span>
               </td>
               <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums text-muted">{g.majorsCount}</td>
-              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums">{fmtToPar(g.sum)}</td>
+              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums">{g.sum >= 0 ? `+${g.sum}` : g.sum}</td>
             </tr>
           ))}
           {!rows.length && (

@@ -205,15 +205,17 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
               <Card className="p-4" onClick={() => setShowStreakModal(true)}>
                 <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Longest streak</div>
                 {streaks.overall && (
-                  <div className="text-sm">
-                    <span className="font-semibold">{streaks.overall.names.join(' & ')}</span>
-                    <span className="text-muted"> — {streaks.overall.length} majors in a row</span>
+                  <div className={streaks.sameEvent ? 'mb-2' : ''}>
+                    <div className="text-lg font-semibold">{streaks.overall.names.join(' & ')}</div>
+                    <div className="text-xs text-muted mt-0.5">{streaks.overall.length} majors in a row</div>
                   </div>
                 )}
                 {streaks.sameEvent && (
-                  <div className={`text-sm ${streaks.overall ? 'mt-1' : ''}`}>
-                    <span className="font-semibold">{streaks.sameEvent.names.join(' & ')}</span>
-                    <span className="text-muted"> — {streaks.sameEvent.length} straight {eventTypeLabel(streaks.sameEvent.eventType)}</span>
+                  <div>
+                    <div className="text-lg font-semibold">{streaks.sameEvent.names.join(' & ')}</div>
+                    <div className="text-xs text-muted mt-0.5">
+                      {streaks.sameEvent.length} straight {eventTypeLabel(streaks.sameEvent.eventType)}
+                    </div>
                   </div>
                 )}
               </Card>
@@ -247,7 +249,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
                 <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Best brain</div>
                 <div className="text-lg font-semibold">{bestBrain.rows.map((r) => r.name).join(' & ')}</div>
                 <div className="text-xs text-muted mt-0.5">
-                  {Math.round(bestBrain.roi * 100)}% ROI (full-data majors)
+                  {Math.round(bestBrain.roi * 100)}% ROI
                 </div>
               </Card>
             )}
