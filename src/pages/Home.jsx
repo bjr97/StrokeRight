@@ -162,11 +162,6 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
               <Button variant="secondary" onClick={() => onNav('compare')}>Compare teams</Button>
             </div>
           </Card>
-
-          <div className="text-center text-xs text-muted">
-            {tournament.deadline && <>Picks lock {new Date(tournament.deadline).toLocaleString()} · </>}
-            Venmo <span className="text-text">@Vishnu697</span>
-          </div>
         </>
       )}
 
@@ -239,6 +234,13 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
               </Card>
             )}
           </div>
+        </div>
+      )}
+
+      {tournament && (
+        <div className="text-center text-xs text-muted">
+          {tournament.deadline && <>Picks lock {new Date(tournament.deadline).toLocaleString()} · </>}
+          Venmo <span className="text-text">@Vishnu697</span>
         </div>
       )}
 
