@@ -10,11 +10,14 @@ import { Card, Stat, Button, TrophyCase, TrophyCaseModal, TierDot, StatusBadge, 
 
 export default function Home({ tournament, golfers, entries, session, onNav }) {
   const nextMajor = storage.get(keys.nextMajor);
-  // The admin-set override always wins while it's there (it's meant to bridge
-  // the gap before the real tournament exists in the system) — otherwise
-  // fall back to the active tournament's own submission deadline.
-  const countdownName = nextMajor?.name || tournament?.name;
-  const countdownDeadline = nextMajor?.deadline || tournament?.deadline;
+  // Once a tournament is active, the countdown is always about IT — either
+  // ticking down to its own deadline while picks are still open ('setup'),
+  // or gone entirely once it's 'live' (the event section below takes over).
+  // The admin's next-major override only ever matters in the off-season gap
+  // when nothing is active yet.
+  const tournamentLive = tournament?.status === 'live';
+  const countdownName = tournament?.name || nextMajor?.name;
+  const countdownDeadline = tournamentLive ? null : (tournament?.deadline || nextMajor?.deadline);
 
   const majors = useMemo(() => buildMajors(), [tournament, entries]);
   // Shown side by side, so each of these 4 gets a DIFFERENT highlight fact
