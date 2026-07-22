@@ -79,6 +79,16 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-32 md:pb-6 space-y-6">
+      {tournament && (
+        <div className="text-center">
+          <h1 className="text-3xl font-semibold">{tournament.name}</h1>
+          <p className="text-sm text-muted mt-1">
+            {tournament.course || 'Course TBD'}
+            {tournament.currentRound ? ` · Round ${tournament.currentRound} in progress` : ''}
+          </p>
+        </div>
+      )}
+
       {countdownDeadline && (
         <Countdown name={countdownName} deadline={countdownDeadline} />
       )}
@@ -104,15 +114,6 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
 
       {tournament && (
         <>
-          <div className="text-center">
-            <div className="text-xs text-muted uppercase tracking-wide">Active tournament</div>
-            <h1 className="text-3xl font-semibold mt-1">{tournament.name}</h1>
-            <p className="text-sm text-muted mt-1">
-              {tournament.course || 'Course TBD'}
-              {tournament.currentRound ? ` · Round ${tournament.currentRound} in progress` : ''}
-            </p>
-          </div>
-
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Stat label="Entries" value={entries.length} />
             <Stat label="Prize pool" value={fmtMoney(structure.pool)} valueClass="text-accent" />
