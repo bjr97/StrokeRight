@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { storage, keys } from '../lib/storage.js';
-import { Card, Button, TierDot, Pill } from '../components/ui.jsx';
+import { Card, Button, Input, TierDot, Pill, alertAsync } from '../components/ui.jsx';
+import { nextTurn, isDraftComplete, takenGolferIds, computeMatchResult } from '../lib/matches.js';
 
 export default function Submit({ tournament, golfers, entries, session, refreshAll }) {
   const deadlinePassed = tournament?.deadline ? new Date(tournament.deadline).getTime() < Date.now() : false;
@@ -89,6 +90,8 @@ export default function Submit({ tournament, golfers, entries, session, refreshA
             {myEntries.map((e) => <EntryCard key={e.id} entry={e} golfers={golfers} />)}
           </div>
         )}
+
+        <MatchesSection tournament={tournament} golfers={golfers} session={session} refreshAll={refreshAll} deadlinePassed={deadlinePassed} />
       </div>
     );
   }
@@ -167,6 +170,8 @@ export default function Submit({ tournament, golfers, entries, session, refreshA
           {myEntries.map((e) => <EntryCard key={e.id} entry={e} golfers={golfers} />)}
         </div>
       )}
+
+      <MatchesSection tournament={tournament} golfers={golfers} session={session} refreshAll={refreshAll} deadlinePassed={deadlinePassed} />
     </div>
   );
 }
@@ -180,4 +185,241 @@ function EntryCard({ entry, golfers }) {
       <div className="text-sm">{names.join(', ')}</div>
     </Card>
   );
+}
+
+// 1v1 matches: two players draft 6 golfers each (5 starters + 1 extra) via
+// an async snake draft against this tournament's own field. No accounts in
+// this app — like everything else here, matches are name-based on the
+// honor system, not a secured per-user identity.
+function MatchesSection({ tournament, golfers, session, refreshAll, deadlinePassed }) {
+  const matches = storage.get(keys.matches(tournament.id)) || [];
+  const myName = session.name.toLowerCase();
+  const myMatches = matches.filter(
+    (m) => m.challengerName.toLowerCase() === myName || m.opponentName.toLowerCase() === myName
+  );
+
+  const [opponentName, setOpponentName] = useState('');
+  const [amount, setAmount] = useState('');
+  const [proposed, setProposed] = useState(false);
+
+  async function propose() {
+    const name = opponentName.trim();
+    if (!name) return alertAsync('Enter an opponent name.');
+    if (name.toLowerCase() === myName) return alertAsync("You can't challenge yourself.");
+    if (!amount || Number(amount) <= 0) return alertAsync('Enter a $ amount greater than 0.');
+
+    const m = {
+      id: 'm' + Date.now().toString(36),
+      challengerName: session.name,
+      opponentName: name,
+      amount: Number(amount),
+      status: 'proposed',
+      firstPicker: null,
+      challengerPicks: [],
+      opponentPicks: [],
+      createdAt: new Date().toISOString(),
+    };
+    storage.set(keys.matches(tournament.id), [...matches, m]);
+    setOpponentName('');
+    setAmount('');
+    setProposed(true);
+    refreshAll();
+  }
+
+  function respond(match, accept) {
+    const updated = matches.map((m) => {
+      if (m.id !== match.id) return m;
+      if (!accept) return { ...m, status: 'declined' };
+      return { ...m, status: 'accepted', firstPicker: Math.random() < 0.5 ? 'challenger' : 'opponent' };
+    });
+    storage.set(keys.matches(tournament.id), updated);
+    refreshAll();
+  }
+
+  function pickGolfer(match, golferId) {
+    const iAmChallenger = match.challengerName.toLowerCase() === myName;
+    const sideKey = iAmChallenger ? 'challengerPicks' : 'opponentPicks';
+    const updated = matches.map((m) => {
+      if (m.id !== match.id) return m;
+      return { ...m, [sideKey]: [...m[sideKey], golferId] };
+    });
+    storage.set(keys.matches(tournament.id), updated);
+    refreshAll();
+  }
+
+  return (
+    <div className="mt-8 space-y-3">
+      <h2 className="text-sm uppercase text-muted tracking-wide">1v1 matches</h2>
+
+      {!deadlinePassed && (
+        <Card className="p-4 space-y-3">
+          <div className="text-sm font-medium">Propose a match</div>
+          <div className="text-xs text-muted">
+            Snake draft, 6 golfers each (5 starters + 1 extra) from this tournament's field. Same scoring rules as
+            the main pool. Draft has to finish before the picks deadline, same as everything else here.
+          </div>
+          {proposed && <div className="text-xs text-accent">Proposed — waiting for them to accept.</div>}
+          <Input value={opponentName} onChange={(v) => { setOpponentName(v); setProposed(false); }} placeholder="Opponent's name" />
+          <Input type="number" value={amount} onChange={(v) => { setAmount(v); setProposed(false); }} placeholder="$ amount" />
+          <Button onClick={propose}>Propose match</Button>
+        </Card>
+      )}
+
+      {!myMatches.length && <div className="text-sm text-muted">No 1v1 matches yet.</div>}
+
+      {myMatches.map((m) => (
+        <MatchCard
+          key={m.id}
+          match={m}
+          golfers={golfers}
+          tournament={tournament}
+          myName={myName}
+          deadlinePassed={deadlinePassed}
+          onRespond={(accept) => respond(m, accept)}
+          onPick={(gid) => pickGolfer(m, gid)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MatchCard({ match, golfers, tournament, myName, deadlinePassed, onRespond, onPick }) {
+  const iAmChallenger = match.challengerName.toLowerCase() === myName;
+  const iAmOpponent = match.opponentName.toLowerCase() === myName;
+  const header = (
+    <div className="text-sm">
+      <span className="font-medium">{match.challengerName}</span> vs{' '}
+      <span className="font-medium">{match.opponentName}</span>
+      <span className="text-muted"> · ${match.amount}</span>
+    </div>
+  );
+
+  if (match.status === 'declined') {
+    return (
+      <Card className="p-4 space-y-1">
+        {header}
+        <div className="text-xs text-danger">Declined</div>
+      </Card>
+    );
+  }
+
+  const complete = match.status === 'accepted' && isDraftComplete(match);
+
+  if (!complete && deadlinePassed) {
+    return (
+      <Card className="p-4 space-y-1">
+        {header}
+        <div className="text-xs text-warn">Voided — draft didn't finish before the deadline.</div>
+      </Card>
+    );
+  }
+
+  if (match.status === 'proposed') {
+    return (
+      <Card className="p-4 space-y-2">
+        {header}
+        {iAmOpponent ? (
+          <div className="flex gap-2">
+            <Button onClick={() => onRespond(true)}>Accept</Button>
+            <Button variant="ghost" onClick={() => onRespond(false)}>Decline</Button>
+          </div>
+        ) : (
+          <div className="text-xs text-muted">Waiting for {match.opponentName} to accept.</div>
+        )}
+      </Card>
+    );
+  }
+
+  if (!complete) {
+    const turn = nextTurn(match);
+    const myTurn = (turn === 'challenger' && iAmChallenger) || (turn === 'opponent' && iAmOpponent);
+    const taken = takenGolferIds(match);
+    const available = [...golfers]
+      .filter((g) => !taken.has(g.id))
+      .sort((a, b) => oddsRank(a.odds) - oddsRank(b.odds));
+    const mySide = iAmChallenger ? match.challengerPicks : match.opponentPicks;
+    const theirSide = iAmChallenger ? match.opponentPicks : match.challengerPicks;
+    const madeSoFar = mySide.length + theirSide.length;
+
+    return (
+      <Card className="p-4 space-y-3">
+        {header}
+        <div className="text-xs text-muted">
+          Draft in progress — pick {madeSoFar + 1} of 12{mySide.length === 5 ? ' (your next pick is the extra/alternate)' : ''}
+        </div>
+        <PickList label="Your picks" picks={mySide} golfers={golfers} />
+        <PickList label="Their picks" picks={theirSide} golfers={golfers} />
+        {myTurn ? (
+          <div>
+            <div className="text-xs font-medium mb-1">Your turn:</div>
+            <div className="max-h-64 overflow-y-auto space-y-1">
+              {available.map((g) => (
+                <button
+                  key={g.id}
+                  onClick={() => onPick(g.id)}
+                  className="w-full flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-bg"
+                >
+                  <span>{g.name}</span>
+                  <span className="text-muted tabular-nums">{g.odds}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="text-xs text-muted">
+            Waiting for {turn === 'challenger' ? match.challengerName : match.opponentName}'s pick.
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  // Draft complete — live (or final) result.
+  const opts = {
+    tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
+    cutLine: tournament.cutLine,
+    currentRound: tournament.currentRound,
+    cutBonusPoints: tournament.cutBonusPoints,
+  };
+  const result = computeMatchResult(match, golfers, opts);
+  const myTotal = iAmChallenger ? result.challenger.total : result.opponent.total;
+  const theirTotal = iAmChallenger ? result.opponent.total : result.challenger.total;
+  const iWon = (result.winner === 'challenger' && iAmChallenger) || (result.winner === 'opponent' && iAmOpponent);
+  const isPush = result.winner === 'push';
+  const isFinal = tournament.status === 'completed';
+
+  return (
+    <Card className="p-4 space-y-2">
+      {header}
+      <div className="flex items-center justify-between text-sm">
+        <span>You: <span className="tabular-nums font-medium">{fmtPts(myTotal)}</span></span>
+        <span>Them: <span className="tabular-nums font-medium">{fmtPts(theirTotal)}</span></span>
+      </div>
+      <div className={`text-xs ${isPush ? 'text-muted' : iWon ? 'text-accent' : 'text-danger'}`}>
+        {isFinal
+          ? isPush ? 'Push — no money changes hands' : iWon ? `You won $${match.amount}` : `You owe $${match.amount}`
+          : isPush ? 'Currently tied' : iWon ? 'Currently winning' : 'Currently behind'}
+      </div>
+    </Card>
+  );
+}
+
+function PickList({ label, picks, golfers }) {
+  const lookup = new Map(golfers.map((g) => [g.id, g]));
+  if (!picks.length) return <div className="text-xs text-muted">{label}: none yet</div>;
+  return (
+    <div className="text-xs text-muted">
+      {label}: {picks.map((id, i) => (i === 5 ? `(${lookup.get(id)?.name || '?'} extra)` : lookup.get(id)?.name || '?')).join(', ')}
+    </div>
+  );
+}
+
+function oddsRank(odds) {
+  if (!odds) return Infinity;
+  const n = parseInt(String(odds).replace(/[+-]/, ''), 10);
+  return Number.isFinite(n) ? n : Infinity;
+}
+
+function fmtPts(n) {
+  return n >= 0 ? `+${n}` : `${n}`;
 }

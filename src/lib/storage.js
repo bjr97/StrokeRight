@@ -9,6 +9,7 @@
 //   - `tournament:{id}`            → tournaments table
 //   - `golfers:{tournament_id}`    → golfers table     (jsonb blob)
 //   - `entries:{tournament_id}`    → entries table     (one row per entry, diffed on write)
+//   - `matches:{tournament_id}`    → matches table     (1v1 matches, upserted + diffed on write)
 //   - `snapshots:{tournament_id}`  → snapshots table   (one row per snapshot, full replace on write)
 //   - `history`                    → history table     (one row per record, full replace on write)
 //   - `admin-code`                 → app_config table  (key='admin-code')
@@ -70,6 +71,7 @@ export const keys = {
   tournament:    (id) => `tournament:${id}`,
   golfers:       (id) => `golfers:${id}`,
   entries:       (id) => `entries:${id}`,
+  matches:       (id) => `matches:${id}`,
   scores:        (id) => `scores:${id}`,
   snapshots:     (id) => `snapshots:${id}`,
   history:       'history',
@@ -116,17 +118,18 @@ async function hydrate() {
   }
 
   console.log('[StrokeRight] hydrating from Supabase…');
-  const [tournR, golfR, entR, snapR, histR, cfgR] = await Promise.all([
+  const [tournR, golfR, entR, matchR, snapR, histR, cfgR] = await Promise.all([
     supabase.from('tournaments').select('*'),
     supabase.from('golfers').select('*'),
     supabase.from('entries').select('*').order('created_at', { ascending: true }),
+    supabase.from('matches').select('*').order('created_at', { ascending: true }),
     supabase.from('snapshots').select('*'),
     supabase.from('history').select('*').order('date', { ascending: false }),
     supabase.from('app_config').select('*'),
   ]);
 
   for (const [label, r] of [
-    ['tournaments', tournR], ['golfers', golfR], ['entries', entR],
+    ['tournaments', tournR], ['golfers', golfR], ['entries', entR], ['matches', matchR],
     ['snapshots', snapR], ['history', histR], ['app_config', cfgR],
   ]) {
     if (r.error) {
@@ -145,6 +148,10 @@ async function hydrate() {
   const entriesByT = groupBy(entR.data || [], 'tournament_id');
   for (const [tId, rows] of entriesByT) {
     cache.set(`entries:${tId}`, rows.map(fromEntryRow));
+  }
+  const matchesByT = groupBy(matchR.data || [], 'tournament_id');
+  for (const [tId, rows] of matchesByT) {
+    cache.set(`matches:${tId}`, rows.map(fromMatchRow));
   }
   const snapsByT = groupBy(snapR.data || [], 'tournament_id');
   for (const [tId, rows] of snapsByT) {
@@ -196,6 +203,30 @@ async function syncToSupabase(key, value, prev) {
         .from('entries')
         .delete()
         .in('id', removed.map((e) => e.id));
+      if (error) throw error;
+    }
+    return;
+  }
+
+  if (key.startsWith('matches:')) {
+    const tId = key.slice('matches:'.length);
+    // Matches mutate in place (accept, each draft pick), unlike entries —
+    // upsert the whole current array on every write rather than diffing
+    // added-only. Cheap: a tournament only ever has a handful of these.
+    const nextIds = new Set(value.map((m) => m.id));
+    const removed = (prev || []).filter((m) => !nextIds.has(m.id));
+
+    if (value.length) {
+      const { error } = await supabase
+        .from('matches')
+        .upsert(value.map((m) => toMatchRow(m, tId)));
+      if (error) throw error;
+    }
+    if (removed.length) {
+      const { error } = await supabase
+        .from('matches')
+        .delete()
+        .in('id', removed.map((m) => m.id));
       if (error) throw error;
     }
     return;
@@ -257,6 +288,11 @@ async function syncDeleteToSupabase(key) {
   if (key.startsWith('entries:')) {
     const id = key.slice('entries:'.length);
     await supabase.from('entries').delete().eq('tournament_id', id);
+    return;
+  }
+  if (key.startsWith('matches:')) {
+    const id = key.slice('matches:'.length);
+    await supabase.from('matches').delete().eq('tournament_id', id);
     return;
   }
   if (key.startsWith('snapshots:')) {
@@ -339,6 +375,34 @@ function fromEntryRow(r) {
     entryNum: r.entry_num,
     golferIds: r.golfer_ids,
     downTierSkipped: r.down_tier_skipped,
+    createdAt: r.created_at,
+  };
+}
+
+function toMatchRow(m, tId) {
+  return {
+    id: m.id,
+    tournament_id: tId,
+    challenger_name: m.challengerName,
+    opponent_name: m.opponentName,
+    amount: m.amount,
+    status: m.status,
+    first_picker: m.firstPicker ?? null,
+    challenger_picks: m.challengerPicks || [],
+    opponent_picks: m.opponentPicks || [],
+    updated_at: new Date().toISOString(),
+  };
+}
+function fromMatchRow(r) {
+  return {
+    id: r.id,
+    challengerName: r.challenger_name,
+    opponentName: r.opponent_name,
+    amount: r.amount,
+    status: r.status,
+    firstPicker: r.first_picker,
+    challengerPicks: r.challenger_picks || [],
+    opponentPicks: r.opponent_picks || [],
     createdAt: r.created_at,
   };
 }

@@ -392,6 +392,7 @@ function ManageTournaments({ active, refreshAll, onEdit }) {
                 storage.delete(keys.tournament(t.id));
                 storage.delete(keys.golfers(t.id));
                 storage.delete(keys.entries(t.id));
+                storage.delete(keys.matches(t.id));
                 storage.delete(keys.scores(t.id));
                 storage.delete(keys.snapshots(t.id));
                 if (activeId === t.id) storage.delete(keys.activeTournId);
