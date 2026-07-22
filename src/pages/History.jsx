@@ -371,11 +371,27 @@ export default function History({ session, refreshAll }) {
         })).filter((d) => d.value > 0)
       : [];
 
+    // Did the winning team actually have the real tournament champion on
+    // its roster? Ties count each co-winner separately, same convention as
+    // the MC distribution above. Only counts majors where the admin has
+    // set a champion golfer (all 11 to date, but older/manual records
+    // could lack one).
+    let calledChampionCount = 0, calledChampionTotal = 0;
+    for (const m of majors) {
+      if (!m.fullData || !m.ranked?.length || !m.champion) continue;
+      const winningRows = m.ranked.filter((r) => r.rank === m.ranked[0].rank);
+      for (const row of winningRows) {
+        calledChampionTotal++;
+        if (row.scored.some((s) => s.golfer.name === m.champion)) calledChampionCount++;
+      }
+    }
+    const calledChampionPct = calledChampionTotal ? Math.round((calledChampionCount / calledChampionTotal) * 100) : null;
+
     return {
       mostWins, topWins, biggestPrize, highestScore, biggestField, bestRoi, ironMan, topGolfer,
       bridesmaid, topPodiumOnly, toughestTest, totalPaidOut, mostLoyal, nailBiter, runaway,
       cheapestCash, longestShot, totalPicksLogged, mrChalk, mrContrarian, minAvgOdds, maxAvgOdds,
-      mcDistribution, mcTotal,
+      mcDistribution, mcTotal, calledChampionCount, calledChampionTotal, calledChampionPct,
     };
   }, [majors, strokerRows, golferRows, longestShot, totalPicksLogged]);
 
@@ -844,6 +860,13 @@ function FunStats({ fun, oneVOne }) {
       label: 'Most decorated',
       value: fun.mostWins.length ? fun.mostWins.map((r) => r.name).join(' & ') : '—',
       sub: fun.topWins > 0 ? `${fun.topWins} major win${fun.topWins > 1 ? 's' : ''}` : 'No wins yet',
+    },
+    {
+      label: 'Called the champion',
+      value: fun.calledChampionPct != null ? `${fun.calledChampionPct}%` : '—',
+      sub: fun.calledChampionPct != null
+        ? `${fun.calledChampionCount} of ${fun.calledChampionTotal} winning teams had the real champion on their roster`
+        : 'Not enough data yet',
     },
     {
       label: 'Biggest single payday',
