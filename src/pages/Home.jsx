@@ -25,18 +25,21 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
     [majors]
   );
 
-  // Defending champ / last winner tiles sit right next to the ACTIVE
-  // tournament's own stats, so they're scoped to ITS event type — "who won
-  // the last Masters" next to this year's Masters — not whatever the next-
-  // major countdown happens to be counting down to.
+  // Defending champ / last winner tiles are scoped to whichever event is
+  // most relevant right now: the ACTIVE tournament's own type while one's
+  // running ("who won the last Masters" next to this year's Masters), or
+  // — between majors, once the active one's been marked completed — the
+  // upcoming major from the admin's countdown override, same source the
+  // Countdown card itself falls back to.
+  const champEventType = tournament?.eventType || nextMajor?.eventType;
   const activePriorMajors = useMemo(() => {
-    if (!tournament?.eventType || tournament.eventType === 'other') return [];
-    const anchor = new Date(tournament.startDate || tournament.deadline || Date.now());
+    if (!champEventType || champEventType === 'other') return [];
+    const anchor = new Date(tournament?.startDate || tournament?.deadline || nextMajor?.deadline || Date.now());
     if (isNaN(anchor)) return [];
     return majors
-      .filter((m) => m.eventType === tournament.eventType && m.date && new Date(m.date) < anchor)
+      .filter((m) => m.eventType === champEventType && m.date && new Date(m.date) < anchor)
       .sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [majors, tournament]);
+  }, [majors, champEventType, tournament, nextMajor]);
   const activeLastMajor = activePriorMajors[0] || null;
   const activeDefendingChampions = activeLastMajor?.winner
     ? activeLastMajor.winner.split(' & ').map((s) => s.trim()).filter(Boolean)
@@ -78,6 +81,24 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
         <Countdown name={countdownName} deadline={countdownDeadline} />
       )}
 
+      {(activeDefendingChampions.length > 0 || activeLastMajor) && (
+        <div className="grid grid-cols-2 gap-3">
+          {activeDefendingChampions.length > 0 && (
+            <Card className="p-4 border-yellow-500/30 bg-yellow-500/5">
+              <div className="text-[11px] uppercase tracking-wide text-yellow-500/80 mb-1">Defending champ</div>
+              <div className="text-lg font-semibold text-yellow-400">{activeDefendingChampions.join(' & ')}</div>
+            </Card>
+          )}
+          {activeLastMajor && (
+            <Card className="p-4 border-yellow-500/30 bg-yellow-500/5">
+              <div className="text-[11px] uppercase tracking-wide text-yellow-500/80 mb-1">Last winner</div>
+              <div className="text-lg font-semibold text-yellow-400">{activeLastMajor.winner}</div>
+              <div className="text-xs text-muted mt-0.5">{activeLastMajor.name}</div>
+            </Card>
+          )}
+        </div>
+      )}
+
       {tournament && (
         <>
           <div className="text-center">
@@ -88,24 +109,6 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
               {tournament.currentRound ? ` · Round ${tournament.currentRound} in progress` : ''}
             </p>
           </div>
-
-          {(activeDefendingChampions.length > 0 || activeLastMajor) && (
-            <div className="grid grid-cols-2 gap-3">
-              {activeDefendingChampions.length > 0 && (
-                <Card className="p-4 border-yellow-500/30 bg-yellow-500/5">
-                  <div className="text-[11px] uppercase tracking-wide text-yellow-500/80 mb-1">Defending champ</div>
-                  <div className="text-lg font-semibold text-yellow-400">{activeDefendingChampions.join(' & ')}</div>
-                </Card>
-              )}
-              {activeLastMajor && (
-                <Card className="p-4 border-yellow-500/30 bg-yellow-500/5">
-                  <div className="text-[11px] uppercase tracking-wide text-yellow-500/80 mb-1">Last winner</div>
-                  <div className="text-lg font-semibold text-yellow-400">{activeLastMajor.winner}</div>
-                  <div className="text-xs text-muted mt-0.5">{activeLastMajor.name}</div>
-                </Card>
-              )}
-            </div>
-          )}
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Stat label="Entries" value={entries.length} />
