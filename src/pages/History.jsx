@@ -299,21 +299,33 @@ export default function History({ session, refreshAll }) {
   const payoutMatrix = useMemo(() => {
     const rowsByMajor = majors
       .map((m) => {
-        const cells = new Map(); // stroker name -> $
+        // stroker name -> { total, items: [{ entryNum, rank, payout, scored, points }] }
+        // `items` has one entry per cashing ENTRY (not per stroker) — a stroker
+        // with 2 entries that both cashed shows 2 items, each with its own
+        // place and team. `scored`/`points` are null for summary-only majors
+        // (no per-golfer breakdown was ever recorded, just the winner's prize).
+        const cells = new Map();
+        function add(name, item) {
+          const rec = cells.get(name) || { total: 0, items: [] };
+          rec.total += item.payout;
+          rec.items.push(item);
+          cells.set(name, rec);
+        }
         if (m.fullData && m.ranked?.length) {
           for (const r of m.ranked) {
             const payout = m.payouts.get(r.entry.id) || 0;
             if (payout <= 0) continue;
-            cells.set(r.entry.name, (cells.get(r.entry.name) || 0) + payout);
+            add(r.entry.name, { entryNum: r.entry.entryNum, rankLabel: formatRank(r.rank, m.ranked), payout, scored: r.scored, points: r.total });
           }
         } else if (m.prize != null) {
           const winnerNames = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
           if (winnerNames.length) {
             const share = m.prize / winnerNames.length;
-            for (const w of winnerNames) cells.set(w, (cells.get(w) || 0) + share);
+            const rankLabel = winnerNames.length > 1 ? 'T1st' : '1st';
+            for (const w of winnerNames) add(w, { entryNum: null, rankLabel, payout: share, scored: null, points: m.points });
           }
         }
-        const total = [...cells.values()].reduce((a, b) => a + b, 0);
+        const total = [...cells.values()].reduce((a, b) => a + b.total, 0);
         return { major: m, cells, total };
       })
       .filter((row) => row.total > 0)
@@ -321,8 +333,8 @@ export default function History({ session, refreshAll }) {
 
     const strokerTotals = new Map();
     for (const row of rowsByMajor) {
-      for (const [name, amt] of row.cells) {
-        strokerTotals.set(name, (strokerTotals.get(name) || 0) + amt);
+      for (const [name, rec] of row.cells) {
+        strokerTotals.set(name, (strokerTotals.get(name) || 0) + rec.total);
       }
     }
     const strokers = [...strokerTotals.entries()]
@@ -857,58 +869,145 @@ function StrokerTable({ rows, sort, onSort, strokerWins, onOpenTrophy, onOpenPod
   );
 }
 
+// "2026 Open Championship" -> { label: "Open Championship", year: "2026" } —
+// splitting these onto two lines keeps the sticky first column narrow, which
+// is the whole point (frees up width for more stroker columns to show).
+function splitMajorName(major) {
+  const year = major.date ? major.date.slice(0, 4) : (major.name.match(/^(\d{4})/)?.[1] || '');
+  const label = major.name.replace(/^\d{4}\s+/, '');
+  return { label, year };
+}
+
 function PayoutMatrixTable({ matrix }) {
   const { rows, strokers, grandTotal } = matrix;
+  const [detail, setDetail] = useState(null); // { major, strokerName, rec } or null
   if (!rows.length || !strokers.length) {
     return <Card className="p-4 text-center text-muted text-sm">No payouts recorded yet.</Card>;
   }
   return (
-    <Card className="p-2 sm:p-3 overflow-x-auto">
-      <table className="text-xs sm:text-sm">
-        <thead>
-          <tr>
-            <th className="sticky left-0 bg-card text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-left align-bottom pb-1.5 px-1.5 whitespace-nowrap">
-              Major
-            </th>
-            {strokers.map((s) => (
-              <th key={s.name} className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap">
-                {s.name}
+    <>
+      <Card className="p-2 sm:p-3 overflow-x-auto">
+        <table className="text-xs sm:text-sm">
+          <thead>
+            <tr>
+              <th className="sticky left-0 bg-card text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-left align-bottom pb-1.5 px-1.5 whitespace-nowrap">
+                Major
               </th>
-            ))}
-            <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-text text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap border-l border-border">
-              Total
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.major.id} className="border-t border-border">
-              <td className="sticky left-0 bg-card py-1.5 sm:py-2 px-1.5 whitespace-nowrap">{row.major.name}</td>
-              {strokers.map((s) => {
-                const amt = row.cells.get(s.name) || 0;
-                return (
-                  <td key={s.name} className={`py-1.5 sm:py-2 px-1.5 text-right tabular-nums whitespace-nowrap ${amt > 0 ? 'text-accent' : 'text-muted'}`}>
-                    {amt > 0 ? fm(amt) : '—'}
+              {strokers.map((s) => (
+                <th key={s.name} className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap">
+                  {s.name}
+                </th>
+              ))}
+              <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-text text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap border-l border-border">
+                Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const { label, year } = splitMajorName(row.major);
+              return (
+                <tr key={row.major.id} className="border-t border-border">
+                  <td className="sticky left-0 bg-card py-1.5 sm:py-2 px-1.5 whitespace-nowrap">
+                    <div>{label}</div>
+                    <div className="text-[10px] text-muted">{year}</div>
                   </td>
-                );
-              })}
-              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-medium whitespace-nowrap border-l border-border">
-                {fm(row.total)}
+                  {strokers.map((s) => {
+                    const rec = row.cells.get(s.name);
+                    return (
+                      <td key={s.name} className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums whitespace-nowrap">
+                        {rec ? (
+                          <button
+                            onClick={() => setDetail({ major: row.major, strokerName: s.name, rec })}
+                            className="text-accent underline decoration-dotted underline-offset-2 hover:opacity-80"
+                          >
+                            {fm(rec.total)}
+                          </button>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-medium whitespace-nowrap border-l border-border">
+                    {fm(row.total)}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="border-t-2 border-border">
+              <td className="sticky left-0 bg-card py-1.5 sm:py-2 px-1.5 font-medium whitespace-nowrap">Total</td>
+              {strokers.map((s) => (
+                <td key={s.name} className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-medium whitespace-nowrap">{fm(s.total)}</td>
+              ))}
+              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-semibold whitespace-nowrap border-l border-border">
+                {fm(grandTotal)}
               </td>
             </tr>
+          </tbody>
+        </table>
+      </Card>
+
+      {detail && (
+        <PayoutDetailModal
+          major={detail.major}
+          strokerName={detail.strokerName}
+          rec={detail.rec}
+          onClose={() => setDetail(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function PayoutDetailModal({ major, strokerName, rec, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="font-medium">{strokerName}</div>
+            <div className="text-xs text-muted">{major.name}</div>
+          </div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        <div className="space-y-4">
+          {rec.items.map((item, i) => (
+            <div key={i} className={i > 0 ? 'pt-3 border-t border-border' : ''}>
+              <div className="flex items-center justify-between text-sm mb-2">
+                <span>
+                  <span className="font-medium">{item.rankLabel}</span>
+                  {item.entryNum != null && <span className="text-muted text-xs"> · Entry {item.entryNum}</span>}
+                  {item.points != null && (
+                    <span className="text-muted text-xs"> · {item.points >= 0 ? '+' : ''}{item.points} pts</span>
+                  )}
+                </span>
+                <span className="text-accent font-medium tabular-nums">{fm(item.payout)}</span>
+              </div>
+              {item.scored ? (
+                <div className="space-y-1">
+                  {item.scored.map((s) => (
+                    <div key={s.golfer.id} className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <TierDot tier={s.golfer.tier} />
+                        <span>{s.golfer.name}</span>
+                        <span className="text-muted tabular-nums">{fmtToPar(s.golfer.strokesToPar)}</span>
+                        <StatusBadge status={s.golfer.status} won={s.golfer.won} />
+                      </span>
+                      <span className={`tabular-nums ${s.points >= 0 ? 'text-accent' : 'text-danger'}`}>
+                        {s.points >= 0 ? `+${s.points}` : s.points}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-muted">Team details not available for this legacy record.</div>
+              )}
+            </div>
           ))}
-          <tr className="border-t-2 border-border">
-            <td className="sticky left-0 bg-card py-1.5 sm:py-2 px-1.5 font-medium whitespace-nowrap">Total</td>
-            {strokers.map((s) => (
-              <td key={s.name} className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-medium whitespace-nowrap">{fm(s.total)}</td>
-            ))}
-            <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-semibold whitespace-nowrap border-l border-border">
-              {fm(grandTotal)}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </Card>
+        </div>
+      </div>
+    </div>
   );
 }
 
