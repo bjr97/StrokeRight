@@ -246,7 +246,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
                 <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Best brain</div>
                 <div className="text-lg font-semibold">{bestBrain.rows.map((r) => r.name).join(' & ')}</div>
                 <div className="text-xs text-muted mt-0.5">
-                  {Math.round(bestBrain.roi * 100)}% ROI
+                  {Math.round(bestBrain.roi * 100)}% ROI / {fmtMoney(bestBrain.rows[0].moneyWon)} won
                 </div>
               </Card>
             )}
