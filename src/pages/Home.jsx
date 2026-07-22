@@ -86,6 +86,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
             <Card className="p-4">
               <div className="text-[11px] uppercase tracking-wide text-muted mb-1">🏆 Defending champ</div>
               <div className="text-lg font-semibold">{activeDefendingChampions.join(' & ')}</div>
+              <div className="text-xs text-muted mt-0.5">{activePriorMajors[0].name}</div>
             </Card>
           )}
           {lastHostedMajor && (
