@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { storage, keys, listTournaments } from '../lib/storage.js';
 import { buildMajors, getStrokerWins, trophyCaseEmojis, formatRank, getStrokerRows } from '../lib/majors.js';
-import { buildMatchLeaderboard, highRoller, untouchable, biggestRivalry } from '../lib/matchStats.js';
+import { buildMatchLeaderboard, highRoller, untouchable, biggestRivalry, getPlayerMatches } from '../lib/matchStats.js';
 import { fmtMoney as fm } from '../lib/payouts.js';
 import { fmtDate } from '../lib/format.js';
 import { oddsToNum } from '../lib/odds.js';
@@ -969,6 +969,7 @@ function PayoutDetailModal({ major, strokerName, rec, onClose }) {
 }
 
 function MatchLeaderboardTable({ rows, sort, onSort }) {
+  const [detailFor, setDetailFor] = useState(null); // player name or null
   const cols = [
     { key: 'name', label: 'Player', left: true },
     { key: 'wins', label: 'Wins' },
@@ -980,42 +981,120 @@ function MatchLeaderboardTable({ rows, sort, onSort }) {
     { key: 'net', label: 'Net $' },
   ];
   return (
-    <Card className="p-2 sm:p-3 overflow-x-auto">
-      <table className="w-full text-xs sm:text-sm">
-        <thead>
-          <tr>
-            {cols.map((c) => (
-              <th
-                key={c.key}
-                onClick={() => onSort(c.key)}
-                className={`text-[9px] sm:text-[11px] uppercase tracking-wide text-muted leading-tight align-bottom pb-1.5 px-0.5 sm:px-1.5 cursor-pointer select-none ${c.left ? 'text-left' : 'text-right'} ${sort.key === c.key ? 'text-accent' : ''}`}
-              >
-                {c.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.name} className="border-t border-border">
-              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 whitespace-nowrap">{r.name}</td>
-              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums">{r.wins}</td>
-              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums">{r.losses}</td>
-              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.winPct != null ? `${r.winPct}%` : '—'}</td>
-              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.proposed}</td>
-              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.declined}</td>
-              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums whitespace-nowrap">{fm(r.wagered)}</td>
-              <td className={`py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums whitespace-nowrap ${r.net > 0 ? 'text-accent' : r.net < 0 ? 'text-danger' : 'text-muted'}`}>
-                {r.net > 0 ? '+' : r.net < 0 ? '-' : ''}{fm(Math.abs(r.net))}
-              </td>
+    <>
+      <Card className="p-2 sm:p-3 overflow-x-auto">
+        <table className="w-full text-xs sm:text-sm">
+          <thead>
+            <tr>
+              {cols.map((c) => (
+                <th
+                  key={c.key}
+                  onClick={() => onSort(c.key)}
+                  className={`text-[9px] sm:text-[11px] uppercase tracking-wide text-muted leading-tight align-bottom pb-1.5 px-0.5 sm:px-1.5 cursor-pointer select-none ${c.left ? 'text-left' : 'text-right'} ${sort.key === c.key ? 'text-accent' : ''}`}
+                >
+                  {c.label}
+                </th>
+              ))}
             </tr>
-          ))}
-          {!rows.length && (
-            <tr><td colSpan={8} className="py-4 text-center text-muted text-sm">No 1v1 matches yet.</td></tr>
-          )}
-        </tbody>
-      </table>
-    </Card>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.name} className="border-t border-border">
+                <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 whitespace-nowrap">{r.name}</td>
+                <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums">
+                  {r.wins + r.losses > 0 ? (
+                    <button onClick={() => setDetailFor(r.name)} className="underline decoration-dotted underline-offset-2 hover:opacity-80">
+                      {r.wins}
+                    </button>
+                  ) : r.wins}
+                </td>
+                <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums">
+                  {r.wins + r.losses > 0 ? (
+                    <button onClick={() => setDetailFor(r.name)} className="underline decoration-dotted underline-offset-2 hover:opacity-80">
+                      {r.losses}
+                    </button>
+                  ) : r.losses}
+                </td>
+                <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.winPct != null ? `${r.winPct}%` : '—'}</td>
+                <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.proposed}</td>
+                <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.declined}</td>
+                <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums whitespace-nowrap">{fm(r.wagered)}</td>
+                <td className={`py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums whitespace-nowrap ${r.net > 0 ? 'text-accent' : r.net < 0 ? 'text-danger' : 'text-muted'}`}>
+                  {r.net > 0 ? '+' : r.net < 0 ? '-' : ''}{fm(Math.abs(r.net))}
+                </td>
+              </tr>
+            ))}
+            {!rows.length && (
+              <tr><td colSpan={8} className="py-4 text-center text-muted text-sm">No 1v1 matches yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </Card>
+
+      {detailFor && (
+        <PlayerMatchesModal name={detailFor} onClose={() => setDetailFor(null)} />
+      )}
+    </>
+  );
+}
+
+function PlayerMatchesModal({ name, onClose }) {
+  const matches = useMemo(() => getPlayerMatches(name), [name]);
+  const outcomeColor = { win: 'text-accent', loss: 'text-danger', push: 'text-muted' };
+  const outcomeLabel = { win: 'Win', loss: 'Loss', push: 'Push' };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-md p-5 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-medium">{name}'s completed 1v1 matches</div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        {!matches.length ? (
+          <div className="text-sm text-muted">No settled matches yet.</div>
+        ) : (
+          <div className="space-y-4">
+            {matches.map((m, i) => (
+              <div key={i} className={i > 0 ? 'pt-4 border-t border-border' : ''}>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span>
+                    <span className={`font-medium ${outcomeColor[m.outcome]}`}>{outcomeLabel[m.outcome]}</span>
+                    <span className="text-muted"> vs {m.opponent}</span>
+                  </span>
+                  <span className="text-muted">{fm(m.amount)}</span>
+                </div>
+                <div className="text-xs text-muted mb-2">
+                  {m.tournamentName} · {m.myTotal >= 0 ? '+' : ''}{m.myTotal} – {m.oppTotal >= 0 ? '+' : ''}{m.oppTotal}
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <div className="text-muted uppercase tracking-wide text-[10px] mb-1">{name}</div>
+                    <div className="space-y-0.5">
+                      {m.myTeam.map((g, gi) => (
+                        <div key={gi} className={`flex items-center justify-between ${g.isExtra ? 'text-muted' : ''}`}>
+                          <span>{g.name}{g.isExtra ? ' (extra)' : ''}</span>
+                          <span className="tabular-nums">{g.points >= 0 ? `+${g.points}` : g.points}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted uppercase tracking-wide text-[10px] mb-1">{m.opponent}</div>
+                    <div className="space-y-0.5">
+                      {m.oppTeam.map((g, gi) => (
+                        <div key={gi} className={`flex items-center justify-between ${g.isExtra ? 'text-muted' : ''}`}>
+                          <span>{g.name}{g.isExtra ? ' (extra)' : ''}</span>
+                          <span className="tabular-nums">{g.points >= 0 ? `+${g.points}` : g.points}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

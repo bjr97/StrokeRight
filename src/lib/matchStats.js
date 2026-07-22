@@ -4,6 +4,7 @@
 
 import { storage, keys, listTournaments } from './storage.js';
 import { isDraftComplete, computeMatchResult } from './matches.js';
+import { scoreGolfer } from './scoring.js';
 
 /**
  * Per-player rows: wins, losses, win %, $ wagered, net $, and how often they
@@ -61,6 +62,67 @@ export function buildMatchLeaderboard() {
     ...r,
     winPct: (r.wins + r.losses) > 0 ? Math.round((r.wins / (r.wins + r.losses)) * 100) : null,
   }));
+}
+
+/**
+ * Every settled 1v1 match a given player was part of (challenger or
+ * opponent, draft finished, tournament completed), newest first — full
+ * detail for the "click a leaderboard number to see the bets" popup.
+ * Each side's team is the 5 starters + the extra, in draft order, with
+ * the extra labeled since it doesn't normally count toward the total.
+ */
+export function getPlayerMatches(name) {
+  const lname = name.toLowerCase();
+  const results = [];
+
+  for (const t of listTournaments()) {
+    if (t.status !== 'completed') continue;
+    const matches = storage.get(keys.matches(t.id)) || [];
+    if (!matches.length) continue;
+    const golfers = storage.get(keys.golfers(t.id)) || [];
+    const golferLookup = new Map(golfers.map((g) => [g.id, g]));
+    const opts = {
+      tieredPenaltyEnabled: t.tieredPenaltyEnabled,
+      cutLine: t.cutLine,
+      currentRound: t.currentRound,
+      cutBonusPoints: t.cutBonusPoints,
+    };
+
+    for (const m of matches) {
+      if (m.status !== 'accepted' || !m.opponentName || !isDraftComplete(m)) continue;
+      const isChallenger = m.challengerName.toLowerCase() === lname;
+      const isOpponent = m.opponentName.toLowerCase() === lname;
+      if (!isChallenger && !isOpponent) continue;
+
+      const result = computeMatchResult(m, golfers, opts);
+      const mySide = isChallenger ? 'challenger' : 'opponent';
+      const oppSide = isChallenger ? 'opponent' : 'challenger';
+      const outcome = result.winner === 'push' ? 'push' : (result.winner === mySide ? 'win' : 'loss');
+
+      const teamFor = (picks) => (picks || []).map((gid, i) => {
+        const g = golferLookup.get(gid);
+        return {
+          name: g?.name || 'Unknown',
+          points: g ? scoreGolfer(g, opts).points : 0,
+          isExtra: i === 5,
+        };
+      });
+
+      results.push({
+        tournamentName: t.name,
+        date: t.startDate || m.createdAt || '',
+        opponent: isChallenger ? m.opponentName : m.challengerName,
+        amount: m.amount,
+        outcome,
+        myTotal: result[mySide].total,
+        oppTotal: result[oppSide].total,
+        myTeam: teamFor(isChallenger ? m.challengerPicks : m.opponentPicks),
+        oppTeam: teamFor(isChallenger ? m.opponentPicks : m.challengerPicks),
+      });
+    }
+  }
+
+  return results.sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
 /** Most all-time 1v1 wins, tie-broken by net $. Null if nobody's ever won one. */
