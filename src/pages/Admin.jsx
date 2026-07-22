@@ -607,6 +607,11 @@ function requestFinalRecap({ tournament, fs, winnerNames }) {
 
     const winningTeam = (fs.winners[0]?.scored || []).map((s) => ({ name: s.golfer.name, points: s.points }));
 
+    // First entry outside the winning rank group — how close (or lopsided)
+    // the finish actually was, for the recap to comment on.
+    const runnerUpRow = fs.ranked.find((r) => r.total < fs.points);
+    const runnerUp = runnerUpRow ? { name: runnerUpRow.entry.name, points: runnerUpRow.total } : null;
+
     fetch('/api/generate-recap', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -614,12 +619,14 @@ function requestFinalRecap({ tournament, fs, winnerNames }) {
         tournamentId: tournament.id,
         tournamentName: tournament.name,
         eventTypeLabel: eventTypeLabel(tournament.eventType),
+        course: tournament.course,
         winnerNames,
         team: winningTeam,
         totalPoints: fs.points,
         prize: fs.prize,
         entryCount: fs.ranked.length,
         storyContext,
+        runnerUp,
       }),
     }).catch((err) => console.error('[recap] final recap request failed:', err));
   } catch (err) {

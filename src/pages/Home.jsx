@@ -507,6 +507,7 @@ function Countdown({ name, deadline }) {
 
 function RecentMajorCard({ m }) {
   const [expanded, setExpanded] = useState(false);
+  const [recapOpen, setRecapOpen] = useState(true);
 
   // Winning entry (or entries, if tied) — m.ranked is sorted by rank ascending.
   const winningRows = m.fullData && m.ranked?.length
@@ -541,7 +542,12 @@ function RecentMajorCard({ m }) {
         </button>
       )}
       {m.recap && (
-        <div className="text-xs text-muted mt-2 pt-2 border-t border-border italic">{m.recap}</div>
+        <div className="mt-2 pt-2 border-t border-border">
+          <button onClick={() => setRecapOpen((o) => !o)} className="text-xs text-accent">
+            {recapOpen ? '▴ Hide' : '▾ View'} recap
+          </button>
+          {recapOpen && <div className="text-xs text-muted mt-1 italic">{m.recap}</div>}
+        </div>
       )}
       {canExpand && expanded && (
         <div className="mt-2 pt-2 border-t border-border space-y-2">

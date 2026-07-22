@@ -292,7 +292,7 @@ async function generateRoundRecap({ supabase, tRow, tournamentId, espnRound, ran
 
   const leaderLines = leaders.map((l) => `${l.rank}. ${l.name} (${l.total >= 0 ? '+' : ''}${l.total} pts)`).join('\n');
 
-  const prompt = `You're writing a short "story so far" update for a fantasy golf pool's group chat, after Round ${espnRound} of ${tRow.name}. Casual, sharp, a little fun — not corporate. 2-4 sentences, plain prose, no headers or markdown.
+  const prompt = `You're writing a short "story so far" update for a fantasy golf pool's group chat, after Round ${espnRound} of ${tRow.name}${tRow.course ? ` at ${tRow.course}` : ''}. Casual, sharp, a little fun — not corporate. 2-4 sentences, plain prose, no headers or markdown.
 
 Current standings (top 5):
 ${leaderLines}

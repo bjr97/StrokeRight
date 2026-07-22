@@ -34,8 +34,8 @@ export default async function handler(req, res) {
 
   try {
     const {
-      tournamentId, tournamentName, eventTypeLabel, winnerNames, team,
-      totalPoints, prize, entryCount, highlight, storyContext,
+      tournamentId, tournamentName, eventTypeLabel, course, winnerNames, team,
+      totalPoints, prize, entryCount, highlight, storyContext, runnerUp,
     } = req.body || {};
 
     if (!tournamentId || !tournamentName || !winnerNames) {
@@ -48,12 +48,16 @@ export default async function handler(req, res) {
       .join(', ');
 
     const contextLines = (storyContext || []).map((line) => `- ${line}`).join('\n');
+    const runnerUpLine = runnerUp
+      ? `Runner-up: ${runnerUp.name} — ${runnerUp.points >= 0 ? '+' : ''}${runnerUp.points} pts, lost by ${totalPoints - runnerUp.points} pt${(totalPoints - runnerUp.points) === 1 ? '' : 's'}.`
+      : '';
 
     const prompt = `You're writing a short recap of a fantasy golf pool result for a group chat of friends who play together. Casual, sharp, a little fun — not corporate, not cheesy. 3-5 sentences max, plain prose (no headers, no bullet points, no markdown).
 
-Tournament: ${tournamentName}${eventTypeLabel ? ` (${eventTypeLabel})` : ''}
+Tournament: ${tournamentName}${eventTypeLabel ? ` (${eventTypeLabel})` : ''}${course ? ` at ${course}` : ''}
 Winner: ${winnerNames} — ${entryCount ?? '?'} entries, $${prize ?? '?'} prize, ${totalPoints >= 0 ? '+' : ''}${totalPoints} pts
 Winning team: ${teamLines}
+${runnerUpLine}
 ${highlight ? `Notable: ${highlight}` : ''}
 ${contextLines ? `Storylines to weave in if they're genuinely interesting (skip anything forced):\n${contextLines}` : ''}
 

@@ -656,6 +656,7 @@ function PodiumFinishesModal({ name, finishes, onClose }) {
 
 function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
   const [expandedEntryId, setExpandedEntryId] = useState(null);
+  const [recapOpen, setRecapOpen] = useState(true);
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-2">
@@ -682,7 +683,12 @@ function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
         </button>
       )}
       {m.recap && (
-        <div className="text-xs text-muted mt-2 pt-2 border-t border-border italic">{m.recap}</div>
+        <div className="mt-2 pt-2 border-t border-border">
+          <button onClick={() => setRecapOpen((o) => !o)} className="text-xs text-accent">
+            {recapOpen ? '▴ Hide' : '▾ View'} recap
+          </button>
+          {recapOpen && <div className="text-xs text-muted mt-1 italic">{m.recap}</div>}
+        </div>
       )}
       {m.fullData && expanded && (
         <div className="mt-2 pt-2 border-t border-border space-y-1">
