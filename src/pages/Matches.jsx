@@ -14,7 +14,48 @@ export default function Matches({ tournament, golfers, session, refreshAll }) {
           from this tournament's field, scored the same as the main pool.
         </p>
       </div>
+      <LiveScoreboard tournament={tournament} golfers={golfers} />
       <MatchesSection tournament={tournament} golfers={golfers} session={session} refreshAll={refreshAll} deadlinePassed={deadlinePassed} />
+    </div>
+  );
+}
+
+// Every accepted, fully-drafted match in this tournament — everyone's, not
+// just yours. Same transparency level as the main leaderboard/entries
+// already have, so this isn't a new privacy line for the app to cross.
+function LiveScoreboard({ tournament, golfers }) {
+  const matches = storage.get(keys.matches(tournament.id)) || [];
+  const active = matches.filter((m) => m.status === 'accepted' && isDraftComplete(m));
+  if (!active.length) return null;
+
+  const opts = {
+    tieredPenaltyEnabled: tournament.tieredPenaltyEnabled,
+    cutLine: tournament.cutLine,
+    currentRound: tournament.currentRound,
+    cutBonusPoints: tournament.cutBonusPoints,
+  };
+  const isFinal = tournament.status === 'completed';
+
+  return (
+    <div className="mb-6 space-y-2">
+      <h2 className="text-sm uppercase text-muted tracking-wide">Live scoreboard</h2>
+      {active.map((m) => {
+        const result = computeMatchResult(m, golfers, opts);
+        const margin = Math.abs(result.challenger.total - result.opponent.total);
+        const leaderName = result.winner === 'challenger' ? m.challengerName : result.winner === 'opponent' ? m.opponentName : null;
+        return (
+          <Card key={m.id} className="p-3 flex items-center justify-between text-sm">
+            <span>
+              <span className="font-medium">{m.challengerName}</span> vs{' '}
+              <span className="font-medium">{m.opponentName}</span>
+              <span className="text-muted"> · ${m.amount}</span>
+            </span>
+            <span className="text-xs text-muted">
+              {leaderName ? `${leaderName} +${margin}` : 'Tied'}{isFinal ? ' · Final' : ''}
+            </span>
+          </Card>
+        );
+      })}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { storage, keys, listTournaments } from '../lib/storage.js';
 import { buildMajors, getStrokerWins, trophyCaseEmojis } from '../lib/majors.js';
+import { buildMatchLeaderboard, highRoller, untouchable, biggestRivalry } from '../lib/matchStats.js';
 import { fmtMoney as fm } from '../lib/payouts.js';
 import { fmtDate } from '../lib/format.js';
 import { oddsToNum } from '../lib/odds.js';
@@ -10,6 +11,7 @@ import { EVENT_TYPES, eventTypeLabel, autoTournamentName } from '../lib/eventTyp
 const TABS = [
   { key: 'majors', label: 'Past majors' },
   { key: 'strokers', label: 'Stroker leaderboard' },
+  { key: 'onevone', label: '1v1 Leaderboard' },
   { key: 'golfers', label: 'Golfer trends' },
   { key: 'fun', label: 'Fun stats' },
 ];
@@ -30,6 +32,7 @@ export default function History({ session, refreshAll }) {
   const [tab, setTab] = useState('majors');
   const [majorSort, setMajorSort] = useState('year');
   const [gSort, setGSort] = useState({ key: 'moneyWon', dir: -1 });
+  const [mSort, setMSort] = useState({ key: 'wins', dir: -1 });
   const [expandedId, setExpandedId] = useState(null);
   const [editing, setEditing] = useState(null);
   const [trophyFor, setTrophyFor] = useState(null);
@@ -49,6 +52,22 @@ export default function History({ session, refreshAll }) {
   // legacy/manually-entered case where only the winner was ever recorded.
   // (Shared with the Home page's recent-majors section — see lib/majors.js.)
   const allMajors = useMemo(() => buildMajors(), [allTournaments, history]);
+  const matchRows = useMemo(() => buildMatchLeaderboard(), [allTournaments]);
+  const sortedMatchRows = useMemo(() => {
+    const list = [...matchRows];
+    list.sort((a, b) => {
+      const av = a[mSort.key], bv = b[mSort.key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'string') return av.localeCompare(bv) * mSort.dir;
+      return (av - bv) * mSort.dir;
+    });
+    return list;
+  }, [matchRows, mSort]);
+  function toggleMSort(key) {
+    setMSort((s) => (s.key === key ? { key, dir: s.dir * -1 } : { key, dir: -1 }));
+  }
 
   const availableYears = useMemo(() => {
     const years = new Set(allMajors.map((m) => (m.date || '').slice(0, 4)).filter(Boolean));
@@ -334,6 +353,12 @@ export default function History({ session, refreshAll }) {
     };
   }, [majors, strokerRows, golferRows, longestShot, totalPicksLogged]);
 
+  const oneVOneFun = useMemo(() => ({
+    highRoller: highRoller(),
+    untouchable: untouchable(),
+    rivalry: biggestRivalry(),
+  }), [allTournaments]);
+
   function save(idx, draft) {
     const next = [...history];
     if (idx == null || idx < 0) next.unshift(draft);
@@ -453,6 +478,17 @@ export default function History({ session, refreshAll }) {
         </div>
       )}
 
+      {tab === 'onevone' && (
+        <div className="space-y-2">
+          <MatchLeaderboardTable rows={sortedMatchRows} sort={mSort} onSort={toggleMSort} />
+          <p className="text-xs text-muted">
+            Wins / Losses / Win % / $ Wagered / Net $ only count matches whose draft finished and whose tournament
+            is fully settled. Win % excludes pushes. Proposed and Declined count every match ever recorded,
+            regardless of whether it was ever played.
+          </p>
+        </div>
+      )}
+
       {tab === 'golfers' && (
         <div className="space-y-4">
           <div className="space-y-2">
@@ -485,7 +521,7 @@ export default function History({ session, refreshAll }) {
         </div>
       )}
 
-      {tab === 'fun' && <FunStats fun={fun} />}
+      {tab === 'fun' && <FunStats fun={fun} oneVOne={oneVOneFun} />}
 
       {editing && <EditModal record={editing} onSave={save} onCancel={() => setEditing(null)} />}
       {trophyFor && (
@@ -666,6 +702,57 @@ function StrokerTable({ rows, sort, onSort, strokerWins, onOpenTrophy, onOpenPod
   );
 }
 
+function MatchLeaderboardTable({ rows, sort, onSort }) {
+  const cols = [
+    { key: 'name', label: 'Player', left: true },
+    { key: 'wins', label: 'Wins' },
+    { key: 'losses', label: 'Losses' },
+    { key: 'winPct', label: 'Win %' },
+    { key: 'proposed', label: 'Proposed' },
+    { key: 'declined', label: 'Declined' },
+    { key: 'wagered', label: '$ Wagered' },
+    { key: 'net', label: 'Net $' },
+  ];
+  return (
+    <Card className="p-2 sm:p-3 overflow-x-auto">
+      <table className="w-full text-xs sm:text-sm">
+        <thead>
+          <tr>
+            {cols.map((c) => (
+              <th
+                key={c.key}
+                onClick={() => onSort(c.key)}
+                className={`text-[9px] sm:text-[11px] uppercase tracking-wide text-muted leading-tight align-bottom pb-1.5 px-0.5 sm:px-1.5 cursor-pointer select-none ${c.left ? 'text-left' : 'text-right'} ${sort.key === c.key ? 'text-accent' : ''}`}
+              >
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.name} className="border-t border-border">
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 whitespace-nowrap">{r.name}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums">{r.wins}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums">{r.losses}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.winPct != null ? `${r.winPct}%` : '—'}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.proposed}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.declined}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums whitespace-nowrap">{fm(r.wagered)}</td>
+              <td className={`py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums whitespace-nowrap ${r.net > 0 ? 'text-accent' : r.net < 0 ? 'text-danger' : 'text-muted'}`}>
+                {r.net > 0 ? '+' : r.net < 0 ? '-' : ''}{fm(Math.abs(r.net))}
+              </td>
+            </tr>
+          ))}
+          {!rows.length && (
+            <tr><td colSpan={8} className="py-4 text-center text-muted text-sm">No 1v1 matches yet.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
 function GolferBars({ rows }) {
   const max = rows[0]?.count || 1;
   return (
@@ -721,7 +808,7 @@ function GolferScoreList({ rows }) {
   );
 }
 
-function FunStats({ fun }) {
+function FunStats({ fun, oneVOne }) {
   if (!fun) return <div className="text-muted text-sm">No past majors yet.</div>;
 
   const cards = [
@@ -814,6 +901,23 @@ function FunStats({ fun }) {
       label: 'Mr. Contrarian (all-time)',
       value: fun.mrContrarian.length ? fun.mrContrarian.map((r) => r.name).join(' & ') : '—',
       sub: fun.maxAvgOdds != null ? `Avg pick odds +${Math.round(fun.maxAvgOdds).toLocaleString()} — swings for the fences` : 'Not enough data yet',
+    },
+    {
+      label: 'High roller',
+      value: oneVOne?.highRoller ? fm(oneVOne.highRoller.amount) : '—',
+      sub: oneVOne?.highRoller ? `${oneVOne.highRoller.challenger} vs ${oneVOne.highRoller.opponent} · ${oneVOne.highRoller.tournament}` : 'No settled 1v1 matches yet',
+    },
+    {
+      label: 'Untouchable',
+      value: oneVOne?.untouchable ? `${oneVOne.untouchable.length} in a row` : '—',
+      sub: oneVOne?.untouchable ? `${oneVOne.untouchable.name} · longest 1v1 win streak` : 'No settled 1v1 matches yet',
+    },
+    {
+      label: 'Rivalry',
+      value: oneVOne?.rivalry ? oneVOne.rivalry.names.join(' vs ') : '—',
+      sub: oneVOne?.rivalry
+        ? `${oneVOne.rivalry.count} matches · ${oneVOne.rivalry.names.map((n) => `${n} ${oneVOne.rivalry.wins[n] || 0}`).join(', ')}`
+        : 'Not enough head-to-head history yet',
     },
   ];
 

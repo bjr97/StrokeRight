@@ -3,6 +3,7 @@ import { storage, keys } from '../lib/storage.js';
 import { rankEntries } from '../lib/scoring.js';
 import { computePayouts, fmtMoney } from '../lib/payouts.js';
 import { buildMajors, withUniqueHighlights, getDefendingChampions, getMostDecorated, getLongestStreaks, getGrandSlamProgress, getStrokerWins, trophyCaseEmojis, GRAND_SLAM_TYPES } from '../lib/majors.js';
+import { buildMatchLeaderboard, knockoutKing } from '../lib/matchStats.js';
 import { eventTypeLabel, eventTypeEmoji } from '../lib/eventTypes.js';
 import { fmtDate } from '../lib/format.js';
 import { Card, Stat, Button, TrophyCase, TrophyCaseModal, TierDot, StatusBadge, fmtToPar } from '../components/ui.jsx';
@@ -40,13 +41,16 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
   const myGrandSlam = grandSlam.all.find(
     (r) => r.name.toLowerCase() === (session?.name || '').toLowerCase()
   ) || { count: 0, pct: 0, types: [] };
-  const hasRecords = !!(mostDecorated || streaks.overall || streaks.sameEvent || grandSlam.leaders.length);
+  const matchRows = useMemo(() => buildMatchLeaderboard(), [majors]);
+  const knockout = useMemo(() => knockoutKing(matchRows), [matchRows]);
+  const hasRecords = !!(mostDecorated || streaks.overall || streaks.sameEvent || grandSlam.leaders.length || knockout);
 
   const strokerWins = getStrokerWins(); // cheap; always fresh
   const [trophyFor, setTrophyFor] = useState(null); // { label, wins } or null — single-stroker icon click
   const [showMostDecoratedModal, setShowMostDecoratedModal] = useState(false);
   const [showStreakModal, setShowStreakModal] = useState(false);
   const [showGrandSlamModal, setShowGrandSlamModal] = useState(false);
+  const [showKnockoutModal, setShowKnockoutModal] = useState(false);
 
   let ranked = [], structure = null, leader = null, myEntries = [];
   if (tournament) {
@@ -155,7 +159,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
       {hasRecords && (
         <div>
           <div className="text-xs text-muted uppercase tracking-wide mb-2">Pool records</div>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {mostDecorated && (
               <Card className="p-4" onClick={() => setShowMostDecoratedModal(true)}>
                 <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Most decorated</div>
@@ -201,6 +205,16 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
                 </div>
               </Card>
             )}
+
+            {knockout && (
+              <Card className="p-4" onClick={() => setShowKnockoutModal(true)}>
+                <div className="text-[11px] uppercase tracking-wide text-muted mb-1">1v1 knockout king</div>
+                <div className="text-lg font-semibold">{knockout.names.join(' & ')}</div>
+                <div className="text-xs text-muted mt-0.5">
+                  {knockout.wins} 1v1 win{knockout.wins === 1 ? '' : 's'}
+                </div>
+              </Card>
+            )}
           </div>
         </div>
       )}
@@ -216,6 +230,9 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
       )}
       {showGrandSlamModal && (
         <GrandSlamModal grandSlam={grandSlam} myGrandSlam={myGrandSlam} myName={session?.name} onClose={() => setShowGrandSlamModal(false)} />
+      )}
+      {showKnockoutModal && (
+        <KnockoutModal knockout={knockout} matchRows={matchRows} onClose={() => setShowKnockoutModal(false)} />
       )}
     </div>
   );
@@ -339,6 +356,39 @@ function GrandSlamModal({ grandSlam, myGrandSlam, myName, onClose }) {
             <div className="text-sm font-medium mb-2">Your progress{myName ? ` (${myName})` : ''} — {myGrandSlam.count}/4</div>
             <GrandSlamChecklist typesWon={myTypes} />
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KnockoutModal({ knockout, matchRows, onClose }) {
+  if (!knockout) return null;
+  const leaderRows = knockout.names
+    .map((n) => matchRows.find((r) => r.name === n))
+    .filter(Boolean);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-medium">1v1 knockout king</div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        <div className="space-y-3">
+          {leaderRows.map((r, i) => (
+            <div key={r.name} className={i > 0 ? 'pt-3 border-t border-border' : ''}>
+              <div className="text-sm font-medium mb-1">{r.name}</div>
+              <div className="text-xs text-muted">
+                {r.wins}-{r.losses} · {r.winPct != null ? `${r.winPct}% win rate` : '—'} ·{' '}
+                <span className={r.net > 0 ? 'text-accent' : r.net < 0 ? 'text-danger' : ''}>
+                  {r.net > 0 ? '+' : r.net < 0 ? '-' : ''}{fmtMoney(Math.abs(r.net))} net
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="text-xs text-muted mt-3 pt-3 border-t border-border">
+          Full 1v1 stats live under History → 1v1 Leaderboard.
         </div>
       </div>
     </div>
