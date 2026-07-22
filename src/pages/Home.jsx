@@ -261,7 +261,7 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
                 <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Money bags</div>
                 <div className="text-lg font-semibold">{moneyBags.rows.map((r) => r.name).join(' & ')}</div>
                 <div className="text-xs text-muted mt-0.5">
-                  {fmtMoney(moneyBags.moneyWon)} won, all-time
+                  +{fmtMoney(moneyBags.net)} net, all-time
                 </div>
               </Card>
             )}
@@ -496,14 +496,15 @@ function MoneyBagsModal({ moneyBags, onClose }) {
             <div key={r.name} className={i > 0 ? 'pt-3 border-t border-border' : ''}>
               <div className="text-sm font-medium mb-1">{r.name}</div>
               <div className="text-xs text-muted">
-                <span className="text-accent">{fmtMoney(r.moneyWon)}</span> won · {r.wins} win{r.wins === 1 ? '' : 's'}
+                <span className="text-accent">+{fmtMoney(r.net)}</span> net · {fmtMoney(r.moneyWon)} won
+                {r.feesPaid != null && <> · {fmtMoney(r.feesPaid)} spent</>}
                 {r.entries != null && <> · {r.entries} entries</>}
               </div>
             </div>
           ))}
         </div>
         <div className="text-xs text-muted mt-3 pt-3 border-t border-border">
-          Gross winnings — every dollar cashed, wins and non-winning paid finishes alike. Not net of entry fees.
+          Net winnings — money won minus entry fees paid. Fees are only tracked for full-data majors; a stroker with none on record just shows their gross winnings.
         </div>
       </div>
     </div>
