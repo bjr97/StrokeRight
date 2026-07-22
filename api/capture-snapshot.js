@@ -1,10 +1,17 @@
 // Vercel Cron target (see vercel.json) — runs once daily at 11:59 PM Central
 // to pull fresh live scores for the pool's active tournament and record one
-// snapshot row per entry. The app itself never wrote to the snapshots table
-// during live play (see src/lib/storage.js's comment on the `snapshots` key)
-// — this is what populates it going forward, so future majors accumulate
-// real round-by-round history to backtest the win-probability model against
-// (src/lib/winProb.js).
+// snapshot row per entry, PLUS one golfer_snapshots row per golfer. The app
+// itself never wrote to either table during live play (see src/lib/
+// storage.js's comment on the `snapshots` key; `golfer_snapshots` doesn't
+// exist in the client's storage model at all) — this is what populates them
+// going forward, so future majors accumulate real round-by-round history to
+// backtest the win-probability model against (src/lib/winProb.js).
+//
+// The entry-level `snapshots` table alone can only backtest the gap-based
+// part of that model. The "upside" (live position) and "odds" terms need
+// each golfer's own per-round state, which the `golfers` table doesn't keep
+// — it's overwritten with the latest live data on every run. golfer_snapshots
+// (docs/2026-07-add-golfer-snapshots.sql) is what preserves that history.
 //
 // Scoring logic below mirrors src/lib/scoring.js — duplicated rather than
 // imported so this stays a standalone Node function; keep in sync if the
@@ -213,7 +220,23 @@ export default async function handler(req, res) {
       if (error) throw error;
     }
 
-    res.status(200).json({ ok: true, tournamentId, round: espnRound, entriesSnapshot: ranked.length });
+    const golferRows = mergedGolfers.map((g) => ({
+      tournament_id: tournamentId,
+      golfer_id: g.id,
+      round: espnRound,
+      status: g.status,
+      strokes_to_par: g.strokesToPar ?? null,
+      thru: g.thru ?? null,
+      position: g.position ?? null,
+    }));
+    if (golferRows.length) {
+      const { error } = await supabase
+        .from('golfer_snapshots')
+        .upsert(golferRows, { onConflict: 'tournament_id,golfer_id,round' });
+      if (error) throw error;
+    }
+
+    res.status(200).json({ ok: true, tournamentId, round: espnRound, entriesSnapshot: ranked.length, golfersSnapshot: golferRows.length });
   } catch (err) {
     res.status(500).json({ error: String(err?.message || err) });
   }
