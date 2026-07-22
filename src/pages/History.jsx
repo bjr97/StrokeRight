@@ -614,7 +614,7 @@ function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
                           <TierDot tier={s.golfer.tier} />
                           <span>{s.golfer.name}</span>
                           <span className="text-muted tabular-nums">{fmtToPar(s.golfer.strokesToPar)}</span>
-                          <StatusBadge status={s.golfer.status} />
+                          <StatusBadge status={s.golfer.status} won={s.golfer.won} />
                         </span>
                         <span className={`tabular-nums ${s.points >= 0 ? 'text-accent' : 'text-danger'}`}>
                           {s.points >= 0 ? `+${s.points}` : s.points}

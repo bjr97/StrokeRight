@@ -484,6 +484,9 @@ function RecentMajorCard({ m }) {
         </div>
       </div>
       <div className="text-xs text-muted mt-2">Winner: <span className="text-text">{m.winner}</span></div>
+      {m.champion && (
+        <div className="text-xs text-muted mt-0.5">Champion: <span className="text-text">{m.champion}</span></div>
+      )}
       {!!m.team?.length && <div className="text-xs text-muted mt-0.5">{m.team.join(', ')}</div>}
       {m.highlight && <div className="text-xs text-warn mt-2">✨ {m.highlight}</div>}
 
@@ -506,7 +509,7 @@ function RecentMajorCard({ m }) {
                       <TierDot tier={s.golfer.tier} />
                       <span>{s.golfer.name}</span>
                       <span className="text-muted tabular-nums">{fmtToPar(s.golfer.strokesToPar)}</span>
-                      <StatusBadge status={s.golfer.status} />
+                      <StatusBadge status={s.golfer.status} won={s.golfer.won} />
                     </span>
                     <span className={`tabular-nums ${s.points >= 0 ? 'text-accent' : 'text-danger'}`}>
                       {s.points >= 0 ? `+${s.points}` : s.points}

@@ -43,6 +43,7 @@ export function Pill({ children, color = 'gray' }) {
     red:    'bg-danger/15 text-danger border-danger/30',
     amber:  'bg-warn/15 text-warn border-warn/30',
     gray:   'bg-border text-muted border-border',
+    gold:   'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
   };
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs border ${colors[color]}`}>
@@ -98,7 +99,8 @@ export function fmtToPar(n) {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
-export function StatusBadge({ status }) {
+export function StatusBadge({ status, won }) {
+  if (won) return <Pill color="gold">🏆 Champion</Pill>;
   switch (status) {
     case 'made_cut':   return <Pill color="green">Made cut</Pill>;
     case 'missed_cut': return <Pill color="red">MC</Pill>;

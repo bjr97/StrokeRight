@@ -35,6 +35,7 @@ export function buildMajors() {
       fullData: true,
       eventType: t.eventType || 'other',
       winner: fs.winnerNames,
+      champion: tGolfers.find((g) => g.won)?.name || null,
       team: fs.team,
       points: fs.points,
       entryCount: tEntries.length,

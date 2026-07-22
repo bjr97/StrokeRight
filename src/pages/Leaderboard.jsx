@@ -201,7 +201,7 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
                         <TierDot tier={s.golfer.tier} />
                         <span>{s.golfer.name}</span>
                         <span className="text-muted text-xs tabular-nums">{fmtToPar(s.golfer.strokesToPar)}</span>
-                        <StatusBadge status={s.golfer.status} />
+                        <StatusBadge status={s.golfer.status} won={s.golfer.won} />
                       </span>
                       <button
                         onClick={(e) => {

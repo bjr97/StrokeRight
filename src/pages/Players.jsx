@@ -71,7 +71,7 @@ export default function Players({ tournament, golfers, entries, onNavToLeaderboa
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <StatusBadge status={g.status} />
+                <StatusBadge status={g.status} won={g.won} />
                 <div className="text-right">
                   <div className={`text-sm font-semibold tabular-nums ${(g.strokesToPar ?? 0) <= 0 ? 'text-accent' : 'text-text'}`}>
                     {fmtToPar(g.strokesToPar)}
