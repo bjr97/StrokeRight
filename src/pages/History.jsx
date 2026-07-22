@@ -387,14 +387,14 @@ export default function History({ session, refreshAll }) {
       </div>
 
       <div
-        className="sticky top-14 z-20 bg-bg/95 backdrop-blur flex gap-2 border-b border-border overflow-x-auto"
-        style={{ overflowAnchor: 'none' }}
+        className="sticky top-14 z-20 bg-bg/95 backdrop-blur flex flex-nowrap gap-2 border-b border-border overflow-x-auto overflow-y-hidden overscroll-x-contain"
+        style={{ overflowAnchor: 'none', touchAction: 'pan-x' }}
       >
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-3 py-2 text-sm border-b-2 -mb-px whitespace-nowrap ${tab === t.key ? 'border-accent text-text' : 'border-transparent text-muted'}`}
+            className={`px-3 py-2 text-sm border-b-2 -mb-px whitespace-nowrap shrink-0 ${tab === t.key ? 'border-accent text-text' : 'border-transparent text-muted'}`}
           >
             {t.label}
           </button>
