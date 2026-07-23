@@ -775,6 +775,24 @@ function LiveControls({ tournament, golfers, refreshAll }) {
     refreshAll();
   }
 
+  // Re-runs the exact same recap request completeTournament() fires at
+  // "mark complete" time, using freshly computed standings/storyContext.
+  // Needed when an earlier or same-event-type major gets backfilled after
+  // the fact — that shifts "defending champ"/"last major played"/prior-win
+  // counts out from under an already-generated recap, leaving it stating
+  // things that are no longer true (e.g. a bogus "back-to-back" claim).
+  async function regenerateRecap() {
+    const fs = finalStandings(tournament, golfers, entries);
+    if (!fs) return alertAsync('Could not compute final standings for this tournament — no entries/golfers data.');
+    const ok = await confirmAsync(
+      `Regenerate the final recap for "${tournament.name}"? This overwrites the existing recap text with a fresh one based on current data.`,
+      { confirmLabel: 'Regenerate' }
+    );
+    if (!ok) return;
+    requestFinalRecap({ tournament, fs, winnerNames: fs.winnerNames });
+    await alertAsync('Recap regeneration requested — check History in a few seconds.');
+  }
+
   function togglePenalty() {
     storage.set(keys.tournament(tournament.id), { ...tournament, tieredPenaltyEnabled: !tournament.tieredPenaltyEnabled });
     refreshAll();
@@ -895,7 +913,10 @@ function LiveControls({ tournament, golfers, refreshAll }) {
             <div className="text-xs text-muted">
               This tournament is filed under History and is no longer active.
             </div>
-            <Button variant="secondary" onClick={reactivate}>Reactivate</Button>
+            <div className="flex gap-2 flex-wrap">
+              <Button variant="secondary" onClick={reactivate}>Reactivate</Button>
+              <Button variant="secondary" onClick={regenerateRecap}>Regenerate recap</Button>
+            </div>
           </>
         ) : (
           <>
