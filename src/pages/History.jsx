@@ -2103,9 +2103,13 @@ function GolferPickPieModal({ name, log, onClose }) {
       groups.set(key, arr);
     }
     const total = filteredLog.length;
-    const pieData = [...groups.entries()]
-      .map(([label, picks]) => ({ name: label, value: picks.length, pct: total ? Math.round((picks.length / total) * 100) : 0 }))
-      .sort((a, b) => b.value - a.value);
+    const entries = [...groups.entries()]
+      .map(([label, picks]) => ({ name: label, value: picks.length, pct: total ? Math.round((picks.length / total) * 100) : 0 }));
+    // By year: chronological left-to-right so it actually reads as a trend.
+    // By event type: biggest slice first, same as before.
+    const pieData = groupBy === 'year'
+      ? entries.sort((a, b) => a.name.localeCompare(b.name))
+      : entries.sort((a, b) => b.value - a.value);
     return { pieData, groups };
   }, [filteredLog, groupBy]);
 
@@ -2158,33 +2162,54 @@ function GolferPickPieModal({ name, log, onClose }) {
           </div>
 
           {pieData.length ? (
-            <>
+            groupBy === 'year' ? (
               <div style={{ width: '100%', height: 260 }}>
                 <ResponsiveContainer>
-                  <PieChart>
-                    <Pie
-                      data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={95}
-                      style={{ cursor: 'pointer' }}
-                      onClick={(d) => openSlice(d.name)}
-                    >
-                      {pieData.map((d, i) => (
-                        <Cell key={d.name} fill={PICK_PIE_COLORS[i % PICK_PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
+                  <BarChart data={pieData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="name" stroke="#8B949E" fontSize={11} />
+                    <YAxis stroke="#8B949E" fontSize={11} allowDecimals={false} />
                     <Tooltip
                       contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
                       labelStyle={{ color: '#E6EDF3' }}
-                      formatter={(value, n, props) => [`${value} pick${value === 1 ? '' : 's'} (${props.payload.pct}%)`, n]}
+                      formatter={(value, n, props) => [`${value} pick${value === 1 ? '' : 's'} (${props.payload.pct}%)`, 'Picks']}
                     />
-                  </PieChart>
+                    <Bar
+                      dataKey="value" fill="#3FB950" radius={[4, 4, 0, 0]}
+                      style={{ cursor: 'pointer' }}
+                      onClick={(d) => openSlice(d.name)}
+                    />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
-              <PieKey
-                data={pieData}
-                colorFor={(d, i) => PICK_PIE_COLORS[i % PICK_PIE_COLORS.length]}
-                onSelect={(d) => openSlice(d.name)}
-              />
-            </>
+            ) : (
+              <>
+                <div style={{ width: '100%', height: 260 }}>
+                  <ResponsiveContainer>
+                    <PieChart>
+                      <Pie
+                        data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={95}
+                        style={{ cursor: 'pointer' }}
+                        onClick={(d) => openSlice(d.name)}
+                      >
+                        {pieData.map((d, i) => (
+                          <Cell key={d.name} fill={PICK_PIE_COLORS[i % PICK_PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
+                        labelStyle={{ color: '#E6EDF3' }}
+                        formatter={(value, n, props) => [`${value} pick${value === 1 ? '' : 's'} (${props.payload.pct}%)`, n]}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <PieKey
+                  data={pieData}
+                  colorFor={(d, i) => PICK_PIE_COLORS[i % PICK_PIE_COLORS.length]}
+                  onSelect={(d) => openSlice(d.name)}
+                />
+              </>
+            )
           ) : (
             <div className="text-sm text-muted text-center py-6">No picks for this filter.</div>
           )}
