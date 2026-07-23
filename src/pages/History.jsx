@@ -965,7 +965,7 @@ export default function History({ session, refreshAll }) {
 function RowsModal({ title, subtitle, rows, onClose, emptyText, chart }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-xl w-full max-w-md p-5 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-lg p-5 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-3 gap-2">
           <div className="min-w-0">
             <div className="font-medium">{title}</div>
@@ -1991,6 +1991,43 @@ function groupByPlace(items, rankOf) {
   return [...buckets.values()].sort((a, b) => a.placeNum - b.placeNum);
 }
 
+// Reusable stat key for a pie chart — a name + color swatch + value/pct row
+// per slice, replacing on-slice labels (illegible past 4-5 thin slices) and
+// recharts' own <Legend/> (name-only, no value). `onSelect`, if given, makes
+// each row clickable too — same drill-down the pie slice itself opens.
+function PieKey({ data, colorFor, onSelect }) {
+  return (
+    <div className="space-y-0.5">
+      {data.map((d, i) => {
+        const row = (
+          <>
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: colorFor(d, i) }} />
+              <span className="truncate">{d.name}</span>
+            </span>
+            <span className="text-muted tabular-nums shrink-0">
+              {d.value}{d.pct != null ? ` (${d.pct}%)` : ''}
+            </span>
+          </>
+        );
+        return onSelect ? (
+          <button
+            key={d.name}
+            onClick={() => onSelect(d)}
+            className="w-full flex items-center justify-between text-xs py-1 px-1.5 rounded hover:bg-bg"
+          >
+            {row}
+          </button>
+        ) : (
+          <div key={d.name} className="w-full flex items-center justify-between text-xs py-1 px-1.5">
+            {row}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Small "stat overview" pie — count of finishes by place, dropped into the
 // top of a popup that already lists the finishes individually below it.
 function PlaceBreakdownChart({ items, rankOf }) {
@@ -1998,22 +2035,26 @@ function PlaceBreakdownChart({ items, rankOf }) {
   if (groups.length < 2) return null; // one place only — a pie of one slice says nothing
   const total = groups.reduce((a, g) => a + g.count, 0);
   const data = groups.map((g) => ({ name: g.label, value: g.count, pct: Math.round((g.count / total) * 100) }));
+  const colorFor = (d, i) => PLACE_PIE_COLORS[i % PLACE_PIE_COLORS.length];
   return (
-    <div style={{ width: '100%', height: 200 }} className="mb-3">
-      <ResponsiveContainer>
-        <PieChart>
-          <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={(d) => `${d.name}: ${d.pct}%`}>
-            {data.map((d, i) => (
-              <Cell key={d.name} fill={PLACE_PIE_COLORS[i % PLACE_PIE_COLORS.length]} />
-            ))}
-          </Pie>
-          <Tooltip
-            contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
-            labelStyle={{ color: '#E6EDF3' }}
-            formatter={(value, name, props) => [`${value} finish${value === 1 ? '' : 'es'} (${props.payload.pct}%)`, name]}
-          />
-        </PieChart>
-      </ResponsiveContainer>
+    <div className="mb-3">
+      <div style={{ width: '100%', height: 180 }}>
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70}>
+              {data.map((d, i) => (
+                <Cell key={d.name} fill={colorFor(d, i)} />
+              ))}
+            </Pie>
+            <Tooltip
+              contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
+              labelStyle={{ color: '#E6EDF3' }}
+              formatter={(value, name, props) => [`${value} finish${value === 1 ? '' : 'es'} (${props.payload.pct}%)`, name]}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <PieKey data={data} colorFor={colorFor} />
     </div>
   );
 }
@@ -2051,8 +2092,9 @@ function GolferPickPieModal({ name, log, onClose }) {
       arr.push(p);
       groups.set(key, arr);
     }
+    const total = filteredLog.length;
     const pieData = [...groups.entries()]
-      .map(([label, picks]) => ({ name: label, value: picks.length }))
+      .map(([label, picks]) => ({ name: label, value: picks.length, pct: total ? Math.round((picks.length / total) * 100) : 0 }))
       .sort((a, b) => b.value - a.value);
     return { pieData, groups };
   }, [filteredLog, groupBy]);
@@ -2076,7 +2118,7 @@ function GolferPickPieModal({ name, log, onClose }) {
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
-        <div className="bg-card border border-border rounded-xl w-full max-w-md p-5 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-card border border-border rounded-xl w-full max-w-lg p-5 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between mb-1">
             <div className="font-medium">{name}</div>
             <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
@@ -2106,28 +2148,33 @@ function GolferPickPieModal({ name, log, onClose }) {
           </div>
 
           {pieData.length ? (
-            <div style={{ width: '100%', height: 240 }}>
-              <ResponsiveContainer>
-                <PieChart>
-                  <Pie
-                    data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85}
-                    label={(d) => `${d.name}: ${d.value}`}
-                    style={{ cursor: 'pointer' }}
-                    onClick={(d) => openSlice(d.name)}
-                  >
-                    {pieData.map((d, i) => (
-                      <Cell key={d.name} fill={PICK_PIE_COLORS[i % PICK_PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
-                    labelStyle={{ color: '#E6EDF3' }}
-                    formatter={(value, n) => [`${value} pick${value === 1 ? '' : 's'}`, n]}
-                  />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+            <>
+              <div style={{ width: '100%', height: 260 }}>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={95}
+                      style={{ cursor: 'pointer' }}
+                      onClick={(d) => openSlice(d.name)}
+                    >
+                      {pieData.map((d, i) => (
+                        <Cell key={d.name} fill={PICK_PIE_COLORS[i % PICK_PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
+                      labelStyle={{ color: '#E6EDF3' }}
+                      formatter={(value, n, props) => [`${value} pick${value === 1 ? '' : 's'} (${props.payload.pct}%)`, n]}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <PieKey
+                data={pieData}
+                colorFor={(d, i) => PICK_PIE_COLORS[i % PICK_PIE_COLORS.length]}
+                onSelect={(d) => openSlice(d.name)}
+              />
+            </>
           ) : (
             <div className="text-sm text-muted text-center py-6">No picks for this filter.</div>
           )}
@@ -2669,30 +2716,41 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
     ? <>What tier the ACTUAL tournament champion was assigned to in this pool's tier system, across your full-data wins. Click a slice to see which majors.</>
     : <>What tier the ACTUAL tournament champion was assigned to in this pool's tier system, across every full-data major. Click a slice to see which majors.</>;
 
+  const mcColorFor = (d, i) => MC_COLORS[['0 MC', '1 MC', '2 MC', '3+ MC'].indexOf(d.name)] || MC_COLORS[i % MC_COLORS.length];
+  function openMcSlice(d) {
+    const key = d.name.replace(' MC', '');
+    const rows = (pieSrc.mcBucketDetails[key] || []).map((row, i) => ({
+      key: i, primary: row.entryName, secondary: row.major.name,
+      value: `${row.mc} MC · ${row.total >= 0 ? '+' : ''}${row.total} pts`,
+    }));
+    openRows(`Winning teams — ${d.name}`, `${rows.length} team${rows.length === 1 ? '' : 's'}`, rows);
+  }
+
+  const tierColorFor = (d) => TIER_HEX[Number(d.name.replace('Tier ', ''))] || '#8B949E';
+  function openTierSlice(d) {
+    const tier = Number(d.name.replace('Tier ', ''));
+    const rows = (pieSrc.championTierMajors[tier] || []).map((row, i) => ({
+      key: i, primary: row.major.name, secondary: fmtDate(row.major.date), value: row.champion,
+    }));
+    openRows(`Champions — ${d.name}`, `${rows.length} major${rows.length === 1 ? '' : 's'}`, rows);
+  }
+
   return (
     <div className="space-y-3">
       {pieSrc.mcDistribution.length > 0 && (
         <Card className="p-4">
           <div className="text-[11px] uppercase tracking-wide text-muted mb-1">{mcHeading}</div>
           <div className="text-xs text-muted mb-2">{mcSubtext}</div>
-          <div style={{ width: '100%', height: 240 }}>
+          <div style={{ width: '100%', height: 220 }}>
             <ResponsiveContainer>
               <PieChart>
                 <Pie
                   data={pieSrc.mcDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85}
-                  label={(d) => `${d.name}: ${d.pct}%`}
                   style={{ cursor: 'pointer' }}
-                  onClick={(d) => {
-                    const key = d.name.replace(' MC', '');
-                    const rows = (pieSrc.mcBucketDetails[key] || []).map((row, i) => ({
-                      key: i, primary: row.entryName, secondary: row.major.name,
-                      value: `${row.mc} MC · ${row.total >= 0 ? '+' : ''}${row.total} pts`,
-                    }));
-                    openRows(`Winning teams — ${d.name}`, `${rows.length} team${rows.length === 1 ? '' : 's'}`, rows);
-                  }}
+                  onClick={openMcSlice}
                 >
                   {pieSrc.mcDistribution.map((d, i) => (
-                    <Cell key={d.name} fill={MC_COLORS[['0 MC', '1 MC', '2 MC', '3+ MC'].indexOf(d.name)] || MC_COLORS[i % MC_COLORS.length]} />
+                    <Cell key={d.name} fill={mcColorFor(d, i)} />
                   ))}
                 </Pie>
                 <Tooltip
@@ -2700,10 +2758,10 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
                   labelStyle={{ color: '#E6EDF3' }}
                   formatter={(value, name, props) => [`${value} team${value === 1 ? '' : 's'} (${props.payload.pct}%)`, name]}
                 />
-                <Legend />
               </PieChart>
             </ResponsiveContainer>
           </div>
+          <PieKey data={pieSrc.mcDistribution} colorFor={mcColorFor} onSelect={openMcSlice} />
         </Card>
       )}
 
@@ -2711,23 +2769,16 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
         <Card className="p-4">
           <div className="text-[11px] uppercase tracking-wide text-muted mb-1">{tierHeading}</div>
           <div className="text-xs text-muted mb-2">{tierSubtext}</div>
-          <div style={{ width: '100%', height: 240 }}>
+          <div style={{ width: '100%', height: 220 }}>
             <ResponsiveContainer>
               <PieChart>
                 <Pie
                   data={pieSrc.championTierDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85}
-                  label={(d) => `${d.name}: ${d.pct}%`}
                   style={{ cursor: 'pointer' }}
-                  onClick={(d) => {
-                    const tier = Number(d.name.replace('Tier ', ''));
-                    const rows = (pieSrc.championTierMajors[tier] || []).map((row, i) => ({
-                      key: i, primary: row.major.name, secondary: fmtDate(row.major.date), value: row.champion,
-                    }));
-                    openRows(`Champions — ${d.name}`, `${rows.length} major${rows.length === 1 ? '' : 's'}`, rows);
-                  }}
+                  onClick={openTierSlice}
                 >
-                  {pieSrc.championTierDistribution.map((d) => (
-                    <Cell key={d.name} fill={TIER_HEX[Number(d.name.replace('Tier ', ''))] || '#8B949E'} />
+                  {pieSrc.championTierDistribution.map((d, i) => (
+                    <Cell key={d.name} fill={tierColorFor(d, i)} />
                   ))}
                 </Pie>
                 <Tooltip
@@ -2735,10 +2786,10 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
                   labelStyle={{ color: '#E6EDF3' }}
                   formatter={(value, name, props) => [`${value} major${value === 1 ? '' : 's'} (${props.payload.pct}%)`, name]}
                 />
-                <Legend />
               </PieChart>
             </ResponsiveContainer>
           </div>
+          <PieKey data={pieSrc.championTierDistribution} colorFor={tierColorFor} onSelect={openTierSlice} />
         </Card>
       )}
 
