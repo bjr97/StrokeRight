@@ -395,7 +395,7 @@ function ManageTournaments({ active, refreshAll, onEdit }) {
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium">{t.name}</span>
-              {t.id === activeId && <Pill color="green">Active</Pill>}
+              {t.id === activeId && t.status === 'live' && <Pill color="green">Active</Pill>}
               <span className="text-xs text-muted">{eventTypeEmoji(t.eventType)} {eventTypeLabel(t.eventType)}</span>
             </div>
             <div className="text-xs text-muted mt-1">Code: <code className="text-text">{t.poolCode}</code> · Deadline {t.deadline || 'TBD'}</div>
