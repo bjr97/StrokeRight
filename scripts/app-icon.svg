@@ -1,13 +1,8 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
   <rect width="512" height="512" fill="#0D1117" />
 
-  <!-- golf flag icon (the main focus) -->
-  <line x1="256" y1="110" x2="256" y2="340" stroke="#3FB950" stroke-width="16" stroke-linecap="round" />
-  <path d="M 256 110 L 400 175 L 256 240 Z" fill="#3FB950" />
-  <circle cx="256" cy="360" r="22" fill="#8B949E" />
-
-  <!-- small "SR" monogram, secondary to the flag -->
-  <text x="256" y="452" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="44">
-    <tspan fill="#E6EDF3">S</tspan><tspan fill="#3FB950">R</tspan>
-  </text>
+  <!-- golf flag icon — centered, no monogram, just the logo -->
+  <line x1="256" y1="96" x2="256" y2="380" stroke="#3FB950" stroke-width="18" stroke-linecap="round" />
+  <path d="M 256 96 L 410 168 L 256 240 Z" fill="#3FB950" />
+  <circle cx="256" cy="404" r="26" fill="#8B949E" />
 </svg>
