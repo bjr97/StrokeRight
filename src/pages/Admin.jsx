@@ -68,7 +68,7 @@ export default function Admin({ tournament, refreshAll }) {
       </div>
 
       <div className="flex gap-2 border-b border-border">
-        {['manage', 'edit', 'create'].map((t) => (
+        {['create', 'manage', 'edit'].map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
