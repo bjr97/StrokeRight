@@ -885,7 +885,7 @@ export default function History({ session, refreshAll }) {
             <p className="text-xs text-muted">
               One stroker's own picking patterns — pick a name to see their most-drafted golfers across every major.
             </p>
-            <PickBreakdown strokerPickCounts={strokerPickCounts} strokerRows={strokerRows} />
+            <PickBreakdown strokerPickCounts={strokerPickCounts} strokerRows={strokerRows} session={session} />
           </div>
         </div>
       )}
@@ -1682,9 +1682,15 @@ function strokerEntryMap(strokerRows) {
   return new Map(strokerRows.filter((r) => r.entries > 0).map((r) => [r.name, r.entries]));
 }
 
-function PickBreakdown({ strokerPickCounts, strokerRows }) {
+function PickBreakdown({ strokerPickCounts, strokerRows, session }) {
   const [mode, setMode] = useState('single'); // 'single' | 'compare'
-  const [selected, setSelected] = useState('');
+  // Defaults open to the logged-in stroker (visual only — falls back to
+  // blank/"Choose a stroker…" if they're not in this list, e.g. an admin
+  // who's never submitted an entry).
+  const [selected, setSelected] = useState(() => {
+    const myNameLower = (session?.name || '').toLowerCase();
+    return [...strokerPickCounts.keys()].find((n) => n.toLowerCase() === myNameLower) || '';
+  });
   const [compareSelected, setCompareSelected] = useState([]); // up to 4 stroker names
   const [detail, setDetail] = useState(null); // { name, tier, details } or null
   const [compareDetail, setCompareDetail] = useState(null); // { title, subtitle, rows } or null
