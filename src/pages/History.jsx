@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis } from 'recharts';
 import { storage, keys, listTournaments } from '../lib/storage.js';
 import { buildMajors, getStrokerWins, trophyCaseEmojis, formatRank, getStrokerRows, groupSummaryPayouts, buildRecapStoryContext } from '../lib/majors.js';
 import { buildMatchLeaderboard, highRoller, untouchable, biggestRivalry, getPlayerMatches, allBets, allStreaks, allRivalries } from '../lib/matchStats.js';
@@ -235,9 +235,16 @@ export default function History({ session, refreshAll }) {
       .sort((a, b) => b.count - a.count)
       .slice(0, 15);
 
-    // Highest cumulative fantasy points first.
+    // Highest cumulative fantasy points first. hi/lo = this golfer's own
+    // best/worst single-event performance (by points), for the Hi/Lo columns
+    // — history is their full per-event log, for the trend popup those open.
     const cumulativeScoreRows = [...golferScoreSum.entries()]
-      .map(([name, r]) => ({ name, sum: r.sum, majorsCount: r.majorsCount, tier: r.tier }))
+      .map(([name, r]) => {
+        const history = golferHistory.get(name) || [];
+        const hi = history.length ? history.reduce((a, b) => (b.points > a.points ? b : a)) : null;
+        const lo = history.length ? history.reduce((a, b) => (b.points < a.points ? b : a)) : null;
+        return { name, sum: r.sum, majorsCount: r.majorsCount, tier: r.tier, hi, lo, history };
+      })
       .sort((a, b) => b.sum - a.sum)
       .slice(0, 50);
 
@@ -881,7 +888,7 @@ export default function History({ session, refreshAll }) {
         <div className="space-y-4">
           <div className="space-y-2">
             <div className="text-sm font-medium">Most picked golfers overall</div>
-            <GolferBars rows={golferRows} onSelect={(g) => setPickPieFor(g.name)} maxHeight={446} />
+            <GolferBars rows={golferRows} onSelect={(g) => setPickPieFor(g.name)} expandable maxHeight={446} />
             <p className="text-xs text-muted">Top {golferRows.length} · tap a golfer to break down who's been picking them.</p>
           </div>
 
@@ -900,7 +907,8 @@ export default function History({ session, refreshAll }) {
             <p className="text-xs text-muted">
               Top {cumulativeScoreRows.length} · each golfer's own fantasy points under our scoring rules (cut
               bonus/penalty, tiered penalty, winner bonus), added once per event they were picked in — not
-              multiplied by how many entries drafted them. Higher is better.
+              multiplied by how many entries drafted them. Higher is better. Hi/Lo are that golfer's own best/
+              worst single-event score — tap either for their scoring trend.
             </p>
           </div>
 
@@ -1674,11 +1682,14 @@ function MatchRowsModal({ title, matches, perspective, onClose, emptyText }) {
   );
 }
 
-function GolferBars({ rows, onSelect, maxHeight }) {
+function GolferBars({ rows, onSelect, expandable, maxHeight }) {
+  const [showAll, setShowAll] = useState(false);
   const max = rows[0]?.count || 1;
+  const visible = expandable && !showAll ? rows.slice(0, 15) : rows;
+  const scrolled = expandable && showAll;
   const list = (
-    <div className={maxHeight ? 'space-y-2 overflow-y-auto pr-1' : 'space-y-2'} style={maxHeight ? { maxHeight } : undefined}>
-      {rows.map((g, i) => {
+    <div className={scrolled ? 'space-y-2 overflow-y-auto pr-1' : 'space-y-2'} style={scrolled ? { maxHeight } : undefined}>
+      {visible.map((g, i) => {
         const Wrap = onSelect ? 'button' : 'div';
         return (
           <Wrap
@@ -1698,7 +1709,19 @@ function GolferBars({ rows, onSelect, maxHeight }) {
       {!rows.length && <div className="text-muted text-sm">No full pick data yet.</div>}
     </div>
   );
-  return <Card className="p-4">{list}</Card>;
+  return (
+    <Card className="p-4">
+      {list}
+      {expandable && rows.length > 15 && (
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          className="w-full text-center text-xs text-accent pt-2 mt-2 border-t border-border"
+        >
+          {showAll ? '▴ Show top 15' : `▾ Show all ${rows.length}`}
+        </button>
+      )}
+    </Card>
+  );
 }
 
 // One stroker's own most-drafted golfers — a Map<golferName, {count, tier,
@@ -1941,41 +1964,82 @@ function PickBreakdown({ strokerPickCounts, strokerRows, session }) {
 }
 
 function GolferScoreList({ rows }) {
+  const [showAll, setShowAll] = useState(false);
+  const [trendFor, setTrendFor] = useState(null); // { name, tier, history } or null
+  const visible = showAll ? rows : rows.slice(0, 15);
+
+  const table = (
+    <table className="w-full text-xs sm:text-sm">
+      <thead className={showAll ? 'sticky top-0 bg-card' : undefined}>
+        <tr>
+          <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-left pb-1.5 px-1.5">Golfer</th>
+          <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Events</th>
+          <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Cumulative</th>
+          <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Avg/Event</th>
+          <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Hi</th>
+          <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Lo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {visible.map((g, i) => {
+          const avg = g.majorsCount ? g.sum / g.majorsCount : 0;
+          const openTrend = () => setTrendFor({ name: g.name, tier: g.tier, history: g.history });
+          return (
+            <tr key={g.name} className="border-t border-border">
+              <td className="py-1.5 sm:py-2 px-1.5">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-4 text-right text-muted">{i + 1}</span>
+                  <span className="truncate">{g.name}</span>
+                </span>
+              </td>
+              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums text-muted">{g.majorsCount}</td>
+              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums">{g.sum >= 0 ? `+${g.sum}` : g.sum}</td>
+              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums text-muted">{avg >= 0 ? `+${avg.toFixed(1)}` : avg.toFixed(1)}</td>
+              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums">
+                {g.hi ? (
+                  <button onClick={openTrend} className="text-accent underline decoration-dotted underline-offset-2 hover:opacity-80">
+                    {g.hi.points >= 0 ? '+' : ''}{g.hi.points}
+                  </button>
+                ) : '—'}
+              </td>
+              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums">
+                {g.lo ? (
+                  <button onClick={openTrend} className="text-danger underline decoration-dotted underline-offset-2 hover:opacity-80">
+                    {g.lo.points >= 0 ? '+' : ''}{g.lo.points}
+                  </button>
+                ) : '—'}
+              </td>
+            </tr>
+          );
+        })}
+        {!rows.length && (
+          <tr><td colSpan={6} className="py-4 text-center text-muted text-sm">No full pick data yet.</td></tr>
+        )}
+      </tbody>
+    </table>
+  );
+
   return (
     <Card className="p-2 sm:p-3">
-      <div className="overflow-y-auto overflow-x-auto" style={{ maxHeight: 584 }}>
-      <table className="w-full text-xs sm:text-sm">
-        <thead className="sticky top-0 bg-card">
-          <tr>
-            <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-left pb-1.5 px-1.5">Golfer</th>
-            <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Events</th>
-            <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Cumulative</th>
-            <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Avg/Event</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((g, i) => {
-            const avg = g.majorsCount ? g.sum / g.majorsCount : 0;
-            return (
-              <tr key={g.name} className="border-t border-border">
-                <td className="py-1.5 sm:py-2 px-1.5">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-4 text-right text-muted">{i + 1}</span>
-                    <span className="truncate">{g.name}</span>
-                  </span>
-                </td>
-                <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums text-muted">{g.majorsCount}</td>
-                <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums">{g.sum >= 0 ? `+${g.sum}` : g.sum}</td>
-                <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums text-muted">{avg >= 0 ? `+${avg.toFixed(1)}` : avg.toFixed(1)}</td>
-              </tr>
-            );
-          })}
-          {!rows.length && (
-            <tr><td colSpan={4} className="py-4 text-center text-muted text-sm">No full pick data yet.</td></tr>
-          )}
-        </tbody>
-      </table>
-      </div>
+      {showAll ? (
+        <div className="overflow-y-auto overflow-x-auto" style={{ maxHeight: 584 }}>{table}</div>
+      ) : (
+        <div className="overflow-x-auto">{table}</div>
+      )}
+      {rows.length > 15 && (
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          className="w-full text-center text-xs text-accent py-1.5 border-t border-border mt-1"
+        >
+          {showAll ? '▴ Show top 15' : `▾ Show all ${rows.length}`}
+        </button>
+      )}
+      {trendFor && (
+        <GolferPerformanceModal
+          name={trendFor.name} tier={trendFor.tier} history={trendFor.history}
+          onClose={() => setTrendFor(null)}
+        />
+      )}
     </Card>
   );
 }
@@ -2271,6 +2335,130 @@ function GolferPickPieModal({ name, log, onClose }) {
         />
       )}
     </>
+  );
+}
+
+// A golfer's own scoring trend — every event they were picked in (once per
+// event, same as the cumulative-score table), grouped three ways: by
+// tournament (a straight chronological trend line — the point of this
+// popup), by event type, or by year (both bar charts of their average).
+// Same toggle pattern as GolferPickPieModal, but for performance (points)
+// instead of pick count — no stroker filter here, since a golfer's own
+// score in an event doesn't depend on who picked them.
+function GolferPerformanceModal({ name, tier, history, onClose }) {
+  const [groupBy, setGroupBy] = useState('tournament'); // 'tournament' | 'eventType' | 'year'
+
+  const sorted = useMemo(
+    () => [...history].sort((a, b) => new Date(a.major.date) - new Date(b.major.date)),
+    [history]
+  );
+
+  const chartData = useMemo(() => {
+    if (groupBy === 'tournament') {
+      return sorted.map((h) => {
+        const { label, year } = splitMajorName(h.major);
+        return { name: `${label} ${year}`, major: h.major, points: h.points, count: 1 };
+      });
+    }
+    const groups = new Map(); // label -> history entries
+    for (const h of sorted) {
+      const key = groupBy === 'eventType' ? eventTypeLabel(h.major.eventType) : ((h.major.date || '').slice(0, 4) || 'Unknown');
+      const arr = groups.get(key) || [];
+      arr.push(h);
+      groups.set(key, arr);
+    }
+    const entries = [...groups.entries()].map(([label, hs]) => ({
+      name: label,
+      points: Math.round((hs.reduce((s, h) => s + h.points, 0) / hs.length) * 10) / 10,
+      count: hs.length,
+    }));
+    if (groupBy === 'year') entries.sort((a, b) => a.name.localeCompare(b.name));
+    else entries.sort((a, b) => b.points - a.points);
+    return entries;
+  }, [sorted, groupBy]);
+
+  const GROUP_LABELS = { tournament: 'Trend', eventType: 'By event type', year: 'By year' };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-lg p-5 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <div className="font-medium flex items-center gap-1.5">
+            <TierDot tier={tier} />{name}
+          </div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        <div className="text-xs text-muted mb-3">{history.length} event{history.length === 1 ? '' : 's'} · own fantasy points</div>
+
+        <div className="flex items-center gap-1.5 mb-3">
+          {['tournament', 'eventType', 'year'].map((key) => (
+            <button
+              key={key}
+              onClick={() => setGroupBy(key)}
+              className={`shrink-0 text-xs px-2 py-1.5 rounded-lg border whitespace-nowrap ${groupBy === key ? 'border-accent text-text' : 'border-border text-muted'}`}
+            >
+              {GROUP_LABELS[key]}
+            </button>
+          ))}
+        </div>
+
+        {chartData.length ? (
+          <>
+            <div style={{ width: '100%', height: 240 }}>
+              <ResponsiveContainer>
+                {groupBy === 'tournament' ? (
+                  <LineChart data={chartData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="name" stroke="#8B949E" fontSize={10} interval="preserveStartEnd" />
+                    <YAxis stroke="#8B949E" fontSize={11} />
+                    <Tooltip
+                      contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
+                      labelStyle={{ color: '#E6EDF3' }}
+                      formatter={(value) => [`${value >= 0 ? '+' : ''}${value} pts`, 'Points']}
+                    />
+                    <Line type="monotone" dataKey="points" stroke="#3FB950" strokeWidth={2} dot={{ r: 3, fill: '#3FB950' }} />
+                  </LineChart>
+                ) : (
+                  <BarChart data={chartData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="name" stroke="#8B949E" fontSize={11} />
+                    <YAxis stroke="#8B949E" fontSize={11} />
+                    <Tooltip
+                      contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
+                      labelStyle={{ color: '#E6EDF3' }}
+                      formatter={(value, n, props) => [`${value >= 0 ? '+' : ''}${value} avg pts (${props.payload.count}×)`, 'Avg']}
+                    />
+                    <Bar dataKey="points" fill="#3FB950" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                )}
+              </ResponsiveContainer>
+            </div>
+            <table className="w-full text-xs mt-1">
+              <thead>
+                <tr>
+                  <th className="text-left text-muted uppercase tracking-wide pb-1 font-normal">
+                    {groupBy === 'tournament' ? 'Tournament' : groupBy === 'eventType' ? 'Event type' : 'Year'}
+                  </th>
+                  {groupBy !== 'tournament' && <th className="text-right text-muted uppercase tracking-wide pb-1 font-normal">Events</th>}
+                  <th className="text-right text-muted uppercase tracking-wide pb-1 font-normal">{groupBy === 'tournament' ? 'Points' : 'Avg pts'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(groupBy === 'tournament' ? chartData : [...chartData].sort((a, b) => b.points - a.points)).map((d, i) => (
+                  <tr key={i} className="border-t border-border">
+                    <td className="py-1 truncate max-w-[160px]">{d.name}</td>
+                    {groupBy !== 'tournament' && <td className="py-1 text-right tabular-nums text-muted">{d.count}</td>}
+                    <td className={`py-1 text-right tabular-nums ${d.points >= 0 ? 'text-accent' : 'text-danger'}`}>
+                      {d.points >= 0 ? '+' : ''}{d.points}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        ) : (
+          <div className="text-sm text-muted text-center py-6">No event history yet.</div>
+        )}
+      </div>
+    </div>
   );
 }
 
