@@ -1951,26 +1951,25 @@ function GolferPickPieModal({ name, log, onClose }) {
             {filteredLog.length} pick{filteredLog.length === 1 ? '' : 's'}{pieStrokerFilter ? ` by ${pieStrokerFilter}` : ' total'}
           </div>
 
-          <div className="flex gap-2 mb-3 flex-wrap">
+          <div className="flex items-center gap-1.5 mb-3">
             {['eventType', 'year'].map((key) => (
               <button
                 key={key}
                 onClick={() => setGroupBy(key)}
-                className={`text-xs px-2.5 py-1.5 rounded-lg border ${groupBy === key ? 'border-accent text-text' : 'border-border text-muted'}`}
+                className={`shrink-0 text-xs px-2 py-1.5 rounded-lg border whitespace-nowrap ${groupBy === key ? 'border-accent text-text' : 'border-border text-muted'}`}
               >
                 {GROUP_LABELS[key]}
               </button>
             ))}
+            {strokerNames.length > 1 && (
+              <Select
+                value={pieStrokerFilter}
+                onChange={setPieStrokerFilter}
+                options={[{ value: '', label: 'All strokers' }, ...strokerNames.map((n) => ({ value: n, label: n }))]}
+                className="flex-1 min-w-0 !px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap"
+              />
+            )}
           </div>
-
-          {strokerNames.length > 1 && (
-            <Select
-              value={pieStrokerFilter}
-              onChange={setPieStrokerFilter}
-              options={[{ value: '', label: 'All strokers' }, ...strokerNames.map((n) => ({ value: n, label: n }))]}
-              className="w-full mb-3"
-            />
-          )}
 
           {pieData.length ? (
             <div style={{ width: '100%', height: 240 }}>
