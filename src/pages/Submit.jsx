@@ -2,9 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { storage, keys } from '../lib/storage.js';
 import { Card, Button, TierDot, Pill } from '../components/ui.jsx';
 
+const MAX_ENTRIES_PER_TOURNAMENT = 5;
+
 export default function Submit({ tournament, golfers, entries, session, refreshAll }) {
   const deadlinePassed = tournament?.deadline ? new Date(tournament.deadline).getTime() < Date.now() : false;
   const myEntries = entries.filter((e) => e.name.toLowerCase() === session.name.toLowerCase());
+  const atEntryLimit = myEntries.length >= MAX_ENTRIES_PER_TOURNAMENT;
 
   const [picks, setPicks] = useState({}); // tier -> [golferIds]
   const [downTier, setDownTier] = useState(null); // tier number to skip
@@ -40,6 +43,7 @@ export default function Submit({ tournament, golfers, entries, session, refreshA
 
   const allPicks = Object.values(picks).flat();
   const isValid = (() => {
+    if (atEntryLimit) return false;
     if (allPicks.length !== 6) return false;
     if (downTier) {
       if ((picks[downTier]?.length || 0) !== 0) return false;
@@ -59,7 +63,7 @@ export default function Submit({ tournament, golfers, entries, session, refreshA
   })();
 
   function submit() {
-    if (!isValid) return;
+    if (!isValid || atEntryLimit) return;
     const newEntry = {
       id: 'e' + Date.now().toString(36),
       name: session.name,
@@ -103,6 +107,14 @@ export default function Submit({ tournament, golfers, entries, session, refreshA
       {submitted && (
         <Card className="p-4 mb-4 border-accent/40 bg-accent/5">
           <div className="text-accent text-sm">✓ Entry submitted. You can submit another below.</div>
+        </Card>
+      )}
+
+      {atEntryLimit && (
+        <Card className="p-4 mb-4 border-warn/40 bg-warn/5">
+          <div className="text-warn text-sm">
+            You've reached the {MAX_ENTRIES_PER_TOURNAMENT}-entry limit for this tournament — no more submissions allowed.
+          </div>
         </Card>
       )}
 

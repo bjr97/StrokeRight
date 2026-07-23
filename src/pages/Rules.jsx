@@ -92,6 +92,10 @@ export default function Rules() {
         <p>An entry's total score is the sum of all 6 golfers' points. Entries are ranked by total points, descending, with ties sharing the same rank (standard golf-style tie handling — if two entries tie for 2nd, both show rank 2, and the next entry jumps to rank 4).</p>
       </Section>
 
+      <Section title="Entry limit">
+        <p>Each person can submit up to <span className="text-text">5 entries per tournament</span>. Once you've hit 5, submission is locked for that tournament — your existing entries still play, you just can't add more.</p>
+      </Section>
+
       <Section title="Payout structure">
         <p>
           The prize pool is entry count × entry fee. How it splits depends on how many entries there are that
