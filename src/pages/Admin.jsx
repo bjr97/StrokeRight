@@ -287,8 +287,30 @@ function ManageTournaments({ active, refreshAll, onEdit }) {
   const activeId = getActiveTournamentId();
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('date');
+  const [eventTypeFilter, setEventTypeFilter] = useState('all');
+  const [winnerFilter, setWinnerFilter] = useState('');
 
-  const filtered = statusFilter === 'all' ? all : all.filter((t) => (t.status || 'setup') === statusFilter);
+  // Who won each tournament (pool winner, not the real-world golf champion) —
+  // only known for tournaments buildMajors() can resolve a winner for
+  // (full-data completed majors, or summary-only History rows). Powers the
+  // "Winner" filter dropdown below.
+  const majors = useMemo(() => buildMajors(), [all]);
+  const winnerByTournamentId = useMemo(() => {
+    const map = new Map();
+    for (const m of majors) {
+      if (m.winner) map.set(m.id, m.winner.split(' & ').map((s) => s.trim()).filter(Boolean));
+    }
+    return map;
+  }, [majors]);
+  const winnerNames = useMemo(
+    () => [...new Set([...winnerByTournamentId.values()].flat())].sort((a, b) => a.localeCompare(b)),
+    [winnerByTournamentId]
+  );
+
+  const filtered = all
+    .filter((t) => statusFilter === 'all' || (t.status || 'setup') === statusFilter)
+    .filter((t) => eventTypeFilter === 'all' || (t.eventType || 'other') === eventTypeFilter)
+    .filter((t) => !winnerFilter || (winnerByTournamentId.get(t.id) || []).includes(winnerFilter));
   const visible = sortTournaments(filtered, sortBy);
 
   // A quick label toggle — not the same ceremony as Live Controls' "Mark
@@ -344,19 +366,28 @@ function ManageTournaments({ active, refreshAll, onEdit }) {
         ))}
       </div>
 
-      <div className="flex items-center gap-1 flex-wrap">
-        <span className="text-xs text-muted mr-1">Sort:</span>
-        {SORT_OPTIONS.map((s) => (
+      <div className="flex items-center gap-2 flex-wrap">
+        <Select value={sortBy} onChange={setSortBy} options={SORT_OPTIONS} className="text-sm" />
+        <Select
+          value={eventTypeFilter}
+          onChange={setEventTypeFilter}
+          options={[{ value: 'all', label: 'All events' }, ...EVENT_TYPES]}
+          className="text-sm"
+        />
+        <Select
+          value={winnerFilter}
+          onChange={setWinnerFilter}
+          options={[{ value: '', label: 'All winners' }, ...winnerNames.map((n) => ({ value: n, label: n }))]}
+          className="text-sm"
+        />
+        {(eventTypeFilter !== 'all' || winnerFilter) && (
           <button
-            key={s.value}
-            onClick={() => setSortBy(s.value)}
-            className={`px-2.5 py-1 rounded-lg text-xs border transition ${
-              sortBy === s.value ? 'bg-accent text-bg border-accent' : 'border-border text-muted hover:text-text'
-            }`}
+            onClick={() => { setEventTypeFilter('all'); setWinnerFilter(''); }}
+            className="text-xs text-muted hover:text-text underline"
           >
-            {s.label}
+            Clear filters
           </button>
-        ))}
+        )}
       </div>
 
       {visible.map((t) => (
