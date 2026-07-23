@@ -55,7 +55,7 @@ ${text}`;
     }
     const aiJson = await aiRes.json();
     let raw = aiJson?.content?.[0]?.text?.trim();
-    if (!raw) throw new Error('Anthropic returned no text.');
+    if (!raw) throw new Error(`Anthropic returned no text. stop_reason=${aiJson?.stop_reason} content=${JSON.stringify(aiJson?.content)} keys=${Object.keys(aiJson || {}).join(',')}`);
 
     // Defensive: strip markdown code fences if the model added them anyway.
     raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
