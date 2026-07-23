@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { storage, keys, getActiveTournamentId, bootstrap, refresh } from './lib/storage.js';
-import { SUPABASE_READY } from './lib/supabase.js';
+import { supabase, SUPABASE_READY } from './lib/supabase.js';
 import { fetchEspnScoreboard, normalizeEspn } from './lib/espnApi.js';
 import { nextTurn, isDraftComplete } from './lib/matches.js';
+import { rankEntries } from './lib/scoring.js';
 import Rules from './pages/Rules.jsx';
 import AuthGate from './components/AuthGate.jsx';
 import Nav from './components/Nav.jsx';
@@ -133,6 +134,43 @@ export default function App() {
         currentRound: currentTournament.currentRound || currentRound,
         cutLine: currentTournament.cutLine ?? cutLine,
       });
+
+      // Snapshot capture, throttled to once per 30 min per round — admins
+      // tend to hit Live sync constantly during play, and every sync is now
+      // a candidate history point (docs/2026-07-snapshot-history.sql lets a
+      // round have many rows instead of one upserted-in-place), so without
+      // a throttle this would flood the trend history with near-duplicates.
+      // Tagged with ESPN's own detected round (`currentRound` here), same as
+      // the nightly cron (api/capture-snapshot.js) which still runs as the
+      // one guaranteed "official" capture regardless of anyone syncing.
+      if (currentTournament.status === 'live') {
+        const priorSnaps = (storage.get(keys.snapshots(tournamentId)) || []).filter((s) => s.round === currentRound);
+        const lastCapturedAt = priorSnaps.length ? Math.max(...priorSnaps.map((s) => new Date(s.createdAt).getTime())) : 0;
+        const THROTTLE_MS = 30 * 60 * 1000;
+        if (Date.now() - lastCapturedAt >= THROTTLE_MS) {
+          const currentEntries = storage.get(keys.entries(tournamentId)) || [];
+          const ranked = rankEntries(currentEntries, merged, {
+            tieredPenaltyEnabled: currentTournament.tieredPenaltyEnabled,
+            cutLine: currentTournament.cutLine ?? cutLine,
+            currentRound,
+            cutBonusPoints: currentTournament.cutBonusPoints,
+          });
+          if (ranked.length) {
+            const rows = ranked.map((r) => ({
+              tournament_id: tournamentId, entry_id: r.entry.id, round: currentRound, points: r.total, rank: r.rank,
+            }));
+            await supabase.from('snapshots').insert(rows);
+          }
+          const golferRows = merged.map((g) => ({
+            tournament_id: tournamentId, golfer_id: g.id, round: currentRound,
+            status: g.status, strokes_to_par: g.strokesToPar ?? null, thru: g.thru ?? null, position: g.position ?? null,
+          }));
+          if (golferRows.length) {
+            await supabase.from('golfer_snapshots').insert(golferRows);
+          }
+        }
+      }
+
       refreshAll();
       await alertAsync('Live scores refreshed from ESPN.');
     } catch (err) {

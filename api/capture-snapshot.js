@@ -206,7 +206,11 @@ export default async function handler(req, res) {
     if (ranked.length) {
       // Tagged with ESPN's actual detected round (not the admin-gated
       // `currentRound` above) so the snapshot's round always reflects which
-      // real round was being played the day of capture.
+      // real round was being played the day of capture. This is the
+      // "official" once-daily capture (see vercel.json); live syncs during
+      // the day (App.jsx's refreshLive) insert their own rows too, throttled
+      // to once per 30 min per round — every capture is its own row now
+      // (docs/2026-07-snapshot-history.sql), not an upsert-in-place.
       const rows = ranked.map((r) => ({
         tournament_id: tournamentId,
         entry_id: r.entryId,
@@ -214,9 +218,7 @@ export default async function handler(req, res) {
         points: r.total,
         rank: r.rank,
       }));
-      const { error } = await supabase
-        .from('snapshots')
-        .upsert(rows, { onConflict: 'tournament_id,entry_id,round' });
+      const { error } = await supabase.from('snapshots').insert(rows);
       if (error) throw error;
     }
 
@@ -230,9 +232,7 @@ export default async function handler(req, res) {
       position: g.position ?? null,
     }));
     if (golferRows.length) {
-      const { error } = await supabase
-        .from('golfer_snapshots')
-        .upsert(golferRows, { onConflict: 'tournament_id,golfer_id,round' });
+      const { error } = await supabase.from('golfer_snapshots').insert(golferRows);
       if (error) throw error;
     }
 

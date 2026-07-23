@@ -10,7 +10,10 @@
 //   - `golfers:{tournament_id}`    → golfers table     (jsonb blob)
 //   - `entries:{tournament_id}`    → entries table     (one row per entry, diffed on write)
 //   - `matches:{tournament_id}`    → matches table     (1v1 matches, upserted + diffed on write)
-//   - `snapshots:{tournament_id}`  → snapshots table   (one row per snapshot, full replace on write)
+//   - `snapshots:{tournament_id}`  → snapshots table   (full replace via storage.set — only used by
+//                                     seedData.js; real captures insert directly via the `supabase`
+//                                     client instead, see App.jsx's refreshLive and api/capture-snapshot.js,
+//                                     since a tournament round can now have many snapshot rows over time)
 //   - `history`                    → history table     (one row per record, full replace on write)
 //   - `admin-code`                 → app_config table  (key='admin-code')
 //   - `active-tournament-id`       → app_config table  (key='active-tournament-id')
@@ -124,7 +127,11 @@ async function hydrate() {
     supabase.from('golfers').select('*'),
     supabase.from('entries').select('*').order('created_at', { ascending: true }),
     supabase.from('matches').select('*').order('created_at', { ascending: true }),
-    supabase.from('snapshots').select('*'),
+    // Ascending so consumers that build a Map keyed by (round, entry/golfer)
+    // and just keep overwriting as they iterate — Trends.jsx, Leaderboard.jsx —
+    // naturally end up with the LATEST capture per round, now that a round
+    // can have more than one snapshot row (see docs/2026-07-snapshot-history.sql).
+    supabase.from('snapshots').select('*').order('created_at', { ascending: true }),
     supabase.from('history').select('*').order('date', { ascending: false }),
     supabase.from('app_config').select('*'),
     supabase.from('recaps').select('*'),
@@ -424,7 +431,7 @@ function toSnapshotRow(s, tId) {
   };
 }
 function fromSnapshotRow(r) {
-  return { entryId: r.entry_id, round: r.round, points: r.points, rank: r.rank };
+  return { entryId: r.entry_id, round: r.round, points: r.points, rank: r.rank, createdAt: r.created_at };
 }
 
 function toHistoryRow(h) {
