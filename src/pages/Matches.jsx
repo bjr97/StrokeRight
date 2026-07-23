@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { storage, keys, refresh } from '../lib/storage.js';
-import { Card, Button, Input, Select, alertAsync } from '../components/ui.jsx';
+import { Card, Button, Input, Select, TierDot, alertAsync } from '../components/ui.jsx';
 import { nextTurn, isDraftComplete, takenGolferIds, computeMatchResult } from '../lib/matches.js';
 
 export default function Matches({ tournament, golfers, session, refreshAll }) {
@@ -243,10 +243,12 @@ function MatchesSection({ tournament, golfers, session, refreshAll, deadlinePass
 }
 
 function MatchCard({ match, golfers, tournament, myName, deadlinePassed, onAccept, onDecline, onCancel, onPick }) {
+  const [draftRoomOpen, setDraftRoomOpen] = useState(false);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const iAmChallenger = match.challengerName.toLowerCase() === myName;
   const iAmOpponent = !!match.opponentName && match.opponentName.toLowerCase() === myName;
   const header = (
-    <div className="text-sm">
+    <div className="text-sm min-w-0">
       <span className="font-medium">{match.challengerName}</span>{' '}
       {match.opponentName ? (
         <>vs <span className="font-medium">{match.opponentName}</span></>
@@ -301,42 +303,32 @@ function MatchCard({ match, golfers, tournament, myName, deadlinePassed, onAccep
   if (!complete) {
     const turn = nextTurn(match);
     const myTurn = (turn === 'challenger' && iAmChallenger) || (turn === 'opponent' && iAmOpponent);
-    const taken = takenGolferIds(match);
-    const available = [...golfers]
-      .filter((g) => !taken.has(g.id))
-      .sort((a, b) => oddsRank(a.odds) - oddsRank(b.odds));
-    const mySide = iAmChallenger ? match.challengerPicks : match.opponentPicks;
-    const theirSide = iAmChallenger ? match.opponentPicks : match.challengerPicks;
-    const madeSoFar = mySide.length + theirSide.length;
+    const waitingName = turn === 'challenger' ? match.challengerName : match.opponentName;
 
     return (
-      <Card className="p-4 space-y-3">
-        {header}
-        <div className="text-xs text-muted">
-          Draft in progress — pick {madeSoFar + 1} of 12{mySide.length === 5 ? ' (your next pick is the extra/alternate)' : ''}
+      <Card className="p-4 space-y-2">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          {header}
+          <button
+            onClick={() => setDraftRoomOpen(true)}
+            className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-lg border bg-accent text-bg border-accent animate-pulse"
+          >
+            Draft Room
+          </button>
         </div>
-        <PickList label="Your picks" picks={mySide} golfers={golfers} />
-        <PickList label="Their picks" picks={theirSide} golfers={golfers} />
-        {myTurn ? (
-          <div>
-            <div className="text-xs font-medium mb-1">Your turn:</div>
-            <div className="max-h-64 overflow-y-auto space-y-1">
-              {available.map((g) => (
-                <button
-                  key={g.id}
-                  onClick={() => onPick(g.id)}
-                  className="w-full flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-bg"
-                >
-                  <span>{g.name}</span>
-                  <span className="text-muted tabular-nums">{g.odds}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="text-xs text-muted">
-            Waiting for {turn === 'challenger' ? match.challengerName : match.opponentName}'s pick.
-          </div>
+        <div className={`text-xs ${myTurn ? 'text-accent font-medium' : 'text-accent animate-pulse'}`}>
+          {myTurn ? 'Your turn!' : `Waiting for ${waitingName}'s pick.`}
+        </div>
+        {draftRoomOpen && (
+          <DraftRoomModal
+            match={match}
+            golfers={golfers}
+            iAmChallenger={iAmChallenger}
+            iAmOpponent={iAmOpponent}
+            complete={false}
+            onPick={onPick}
+            onClose={() => setDraftRoomOpen(false)}
+          />
         )}
       </Card>
     );
@@ -355,10 +347,32 @@ function MatchCard({ match, golfers, tournament, myName, deadlinePassed, onAccep
   const iWon = (result.winner === 'challenger' && iAmChallenger) || (result.winner === 'opponent' && iAmOpponent);
   const isPush = result.winner === 'push';
   const isFinal = tournament.status === 'completed';
+  // "Fully live" for leaderboard purposes = there are real scores to show,
+  // whether the round is still in progress or the tournament has wrapped —
+  // not the pick-only 'setup' phase, where every golfer would just read 0.
+  const hasLiveScores = tournament.status === 'live' || isFinal;
 
   return (
     <Card className="p-4 space-y-2">
-      {header}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        {header}
+        <div className="flex gap-1.5 shrink-0">
+          <button
+            onClick={() => setDraftRoomOpen(true)}
+            className="text-xs font-medium px-2.5 py-1 rounded-lg border border-border text-muted hover:text-text"
+          >
+            Draft Room
+          </button>
+          {hasLiveScores && (
+            <button
+              onClick={() => setLeaderboardOpen(true)}
+              className="text-xs font-medium px-2.5 py-1 rounded-lg border border-accent text-accent"
+            >
+              Match Leaderboard
+            </button>
+          )}
+        </div>
+      </div>
       <div className="flex items-center justify-between text-sm">
         <span>You: <span className="tabular-nums font-medium">{fmtPts(myTotal)}</span></span>
         <span>Them: <span className="tabular-nums font-medium">{fmtPts(theirTotal)}</span></span>
@@ -368,7 +382,129 @@ function MatchCard({ match, golfers, tournament, myName, deadlinePassed, onAccep
           ? isPush ? 'Push — no money changes hands' : iWon ? `You won $${match.amount}` : `You owe $${match.amount}`
           : isPush ? 'Currently tied' : iWon ? 'Currently winning' : 'Currently behind'}
       </div>
+      {draftRoomOpen && (
+        <DraftRoomModal
+          match={match}
+          golfers={golfers}
+          iAmChallenger={iAmChallenger}
+          iAmOpponent={iAmOpponent}
+          complete
+          onPick={onPick}
+          onClose={() => setDraftRoomOpen(false)}
+        />
+      )}
+      {leaderboardOpen && (
+        <MatchLeaderboardModal
+          match={match}
+          result={result}
+          iAmChallenger={iAmChallenger}
+          isFinal={isFinal}
+          onClose={() => setLeaderboardOpen(false)}
+        />
+      )}
     </Card>
+  );
+}
+
+function DraftRoomModal({ match, golfers, iAmChallenger, iAmOpponent, complete, onPick, onClose }) {
+  const mySide = iAmChallenger ? match.challengerPicks : match.opponentPicks;
+  const theirSide = iAmChallenger ? match.opponentPicks : match.challengerPicks;
+
+  let turn = null, myTurn = false, available = [];
+  if (!complete) {
+    turn = nextTurn(match);
+    myTurn = (turn === 'challenger' && iAmChallenger) || (turn === 'opponent' && iAmOpponent);
+    const taken = takenGolferIds(match);
+    available = [...golfers].filter((g) => !taken.has(g.id)).sort((a, b) => oddsRank(a.odds) - oddsRank(b.odds));
+  }
+  const madeSoFar = mySide.length + theirSide.length;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div className="font-medium">{complete ? 'Final picks' : 'Draft Room'}</div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        {!complete && (
+          <div className="text-xs text-muted">
+            Draft in progress — pick {madeSoFar + 1} of 12{mySide.length === 5 ? ' (your next pick is the extra/alternate)' : ''}
+          </div>
+        )}
+        <PickList label="Your picks" picks={mySide} golfers={golfers} />
+        <PickList label="Their picks" picks={theirSide} golfers={golfers} />
+        {!complete && (
+          myTurn ? (
+            <div>
+              <div className="text-xs font-medium mb-1">Your turn:</div>
+              <div className="max-h-64 overflow-y-auto space-y-1">
+                {available.map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => onPick(g.id)}
+                    className="w-full flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-bg"
+                  >
+                    <span>{g.name}</span>
+                    <span className="text-muted tabular-nums">{g.odds}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-accent animate-pulse">
+              Waiting for {turn === 'challenger' ? match.challengerName : match.opponentName}'s pick.
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MatchLeaderboardModal({ match, result, iAmChallenger, isFinal, onClose }) {
+  const mine = iAmChallenger ? result.challenger : result.opponent;
+  const theirs = iAmChallenger ? result.opponent : result.challenger;
+  const myName = iAmChallenger ? match.challengerName : match.opponentName;
+  const theirName = iAmChallenger ? match.opponentName : match.challengerName;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div className="font-medium">Match Leaderboard</div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        <div className="text-xs text-muted">{isFinal ? 'Final scoring' : 'Live scoring'} — same rules as the main pool.</div>
+        <MatchSideBreakdown label="You" name={myName} side={mine} highlight />
+        <MatchSideBreakdown label="Them" name={theirName} side={theirs} />
+      </div>
+    </div>
+  );
+}
+
+function MatchSideBreakdown({ label, name, side, highlight }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium">{label} <span className="text-muted font-normal">({name})</span></span>
+        <span className={`tabular-nums font-semibold ${highlight ? 'text-accent' : ''}`}>{fmtPts(side.total)}</span>
+      </div>
+      <div className="space-y-0.5">
+        {side.perGolfer.map((g) => (
+          <div key={g.id} className={`flex items-center justify-between text-xs py-0.5 ${g.counted ? '' : 'opacity-50'}`}>
+            <span className="flex items-center gap-1.5 min-w-0">
+              <TierDot tier={g.tier} />
+              <span className="truncate">{g.name}</span>
+              {g.isExtra && <span className="text-muted shrink-0">(extra)</span>}
+              {!g.isExtra && !g.counted && <span className="text-muted shrink-0">(subbed out)</span>}
+              {g.status === 'missed_cut' && <span className="text-danger shrink-0">MC</span>}
+              {g.status === 'withdrawn' && <span className="text-muted shrink-0">WD</span>}
+            </span>
+            <span className="tabular-nums shrink-0">{fmtPts(g.points)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -56,17 +56,28 @@ export function scoreMatchSide(pickIds, golfers, opts) {
   const starters = starterIds.map((id) => lookup.get(id));
   const subIndex = starters.findIndex(isEarlyWithdrawal);
 
-  let total = 0;
-  starters.forEach((g, i) => {
-    if (i === subIndex && extra) total += scoreGolfer(extra, opts).points;
-    else if (g) total += scoreGolfer(g, opts).points;
-  });
+  const extraUsedAsSub = subIndex !== -1 && !!extra;
 
-  return {
-    total,
-    extraUsedAsSub: subIndex !== -1 && !!extra,
-    extraScore: extra ? scoreGolfer(extra, opts).points : 0,
-  };
+  // Per-golfer breakdown — one row per drafted golfer (their own real score,
+  // never swapped), each flagged `counted` for whether it adds to `total`.
+  // Every starter counts except the one being subbed out; the extra counts
+  // only if it's the one subbing in.
+  let total = 0;
+  const perGolfer = starters.map((g, i) => {
+    if (!g) return null;
+    const points = scoreGolfer(g, opts).points;
+    const counted = i !== subIndex;
+    if (counted) total += points;
+    return { id: g.id, name: g.name, tier: g.tier, status: g.status, points, isExtra: false, counted };
+  }).filter(Boolean);
+
+  const extraScore = extra ? scoreGolfer(extra, opts).points : 0;
+  if (extraUsedAsSub) total += extraScore;
+  if (extra) {
+    perGolfer.push({ id: extra.id, name: extra.name, tier: extra.tier, status: extra.status, points: extraScore, isExtra: true, counted: extraUsedAsSub });
+  }
+
+  return { total, extraUsedAsSub, extraScore, perGolfer };
 }
 
 /**
