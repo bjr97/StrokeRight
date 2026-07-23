@@ -415,7 +415,23 @@ export function getStrokerWins() {
 // what they'd have been going into this event.
 export function buildRecapStoryContext({ eventType, date, winnerList }, priorMajors) {
   const storyContext = [];
-  const strokerWins = getStrokerWins(); // already reflects everything in priorMajors
+
+  // Deliberately NOT getStrokerWins() — that recomputes from buildMajors()
+  // fresh, which includes the very major being recapped the moment it has a
+  // history row or live entries (i.e. almost always, since this runs after
+  // the record already exists). Counting off the caller's priorMajors list
+  // instead is the only way to avoid a stroker's own win-just-now getting
+  // counted twice (this is what produced "3rd career major" for someone's
+  // 2nd, and "three total" for someone's 2nd, in earlier runs).
+  const strokerWins = new Map();
+  for (const m of [...priorMajors].filter((x) => x.date).sort((a, b) => new Date(b.date) - new Date(a.date))) {
+    if (!m.winner) continue;
+    for (const w of m.winner.split(' & ').map((s) => s.trim()).filter(Boolean)) {
+      const list = strokerWins.get(w) || [];
+      list.push({ major: m.name, date: m.date, eventType: m.eventType });
+      strokerWins.set(w, list);
+    }
+  }
 
   for (const w of winnerList) {
     const priorWins = strokerWins.get(w) || [];

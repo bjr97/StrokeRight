@@ -635,7 +635,10 @@ function TierManager({ tournament, golfers, refreshAll }) {
 // shows up, not a broken "mark complete" flow.
 function requestFinalRecap({ tournament, fs, winnerNames }) {
   try {
-    const priorMajors = buildMajors(); // doesn't include this tournament's history row yet
+    // Exclude this tournament itself — buildMajors() includes it as soon as
+    // it has live entries (true from the moment it's marked complete, so a
+    // "Regenerate recap" call later would otherwise double-count its own win).
+    const priorMajors = buildMajors().filter((m) => m.id !== tournament.id);
     const winnerList = winnerNames.split(' & ').map((s) => s.trim()).filter(Boolean);
     const storyContext = buildRecapStoryContext(
       { eventType: tournament.eventType, date: tournament.startDate, winnerList },
