@@ -640,29 +640,31 @@ export default function History({ session, refreshAll }) {
         ))}
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <Select
-          value={eventTypeFilter}
-          onChange={setEventTypeFilter}
-          options={[{ value: 'all', label: 'All events' }, ...EVENT_TYPES]}
-          className="text-sm"
-        />
-        <Select
-          value={yearFilter}
-          onChange={setYearFilter}
-          options={[{ value: 'all', label: 'All years' }, ...availableYears.map((y) => ({ value: y, label: y }))]}
-          className="text-sm"
-        />
-        <Select
-          value={strokerFilter}
-          onChange={setStrokerFilter}
-          options={[{ value: '', label: 'All strokers' }, ...allStrokerNames.map((n) => ({ value: n, label: n }))]}
-          className="text-sm"
-        />
+      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
+          <Select
+            value={eventTypeFilter}
+            onChange={setEventTypeFilter}
+            options={[{ value: 'all', label: 'All events' }, ...EVENT_TYPES]}
+            className="flex-1 min-w-0 !px-2 py-1.5 text-xs sm:text-sm overflow-hidden text-ellipsis whitespace-nowrap"
+          />
+          <Select
+            value={yearFilter}
+            onChange={setYearFilter}
+            options={[{ value: 'all', label: 'All years' }, ...availableYears.map((y) => ({ value: y, label: y }))]}
+            className="flex-1 min-w-0 !px-2 py-1.5 text-xs sm:text-sm overflow-hidden text-ellipsis whitespace-nowrap"
+          />
+          <Select
+            value={strokerFilter}
+            onChange={setStrokerFilter}
+            options={[{ value: '', label: 'All strokers' }, ...allStrokerNames.map((n) => ({ value: n, label: n }))]}
+            className="flex-1 min-w-0 !px-2 py-1.5 text-xs sm:text-sm overflow-hidden text-ellipsis whitespace-nowrap"
+          />
+        </div>
         {(eventTypeFilter !== 'all' || yearFilter !== 'all' || strokerFilter) && (
           <button
             onClick={() => { setEventTypeFilter('all'); setYearFilter('all'); setStrokerFilter(''); }}
-            className="text-xs text-muted hover:text-text underline"
+            className="text-xs text-muted hover:text-text underline shrink-0"
           >
             Clear filters
           </button>
