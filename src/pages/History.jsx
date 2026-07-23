@@ -1973,7 +1973,12 @@ const GREEN_SCALE = ['#7DC991', '#63C27E', '#4FBB6C', '#3FB950', '#359F46', '#2B
 
 const MC_COLORS = [GREEN_SCALE[1], GREEN_SCALE[4], GREEN_SCALE[6], GREEN_SCALE[9]]; // 0/1/2/3+ MC, light (best) -> dark (worst)
 const TIER_HEX = { 1: GREEN_SCALE[0], 2: GREEN_SCALE[2], 3: GREEN_SCALE[4], 4: GREEN_SCALE[6], 5: GREEN_SCALE[8], 6: GREEN_SCALE[9] };
-const PICK_PIE_COLORS = GREEN_SCALE;
+// The golfer pick-breakdown popup (Golfer trends) assigns colors to slices
+// in data order, which was walking straight down GREEN_SCALE's smooth ramp —
+// neighboring slices (adjacent event types/years) landed on barely-different
+// shades. Zig-zagging light/dark/light/dark instead means any two adjacent
+// slices are always far apart on the scale, however many there are.
+const PICK_PIE_COLORS = [0, 9, 1, 8, 2, 7, 3, 6, 4, 5].map((i) => GREEN_SCALE[i]);
 const PLACE_PIE_COLORS = [GREEN_SCALE[0], GREEN_SCALE[1], GREEN_SCALE[3], GREEN_SCALE[4], GREEN_SCALE[5], GREEN_SCALE[6], GREEN_SCALE[7], GREEN_SCALE[9]];
 
 // Buckets a list of paid finishes by finishing place — "T3rd" and "3rd"
