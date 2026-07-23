@@ -239,3 +239,89 @@ export function biggestRivalry(name) {
   if (!list.length) return null;
   return list.reduce((a, b) => (b.count > a.count ? b : a));
 }
+
+/**
+ * Every settled 1v1 bet ever played, biggest first — the full leaderboard
+ * behind the "High roller" fun-stat tile (which used to just show the
+ * record-holder's own match history instead of the ranking itself).
+ */
+export function allBets() {
+  const bets = [];
+  for (const t of listTournaments()) {
+    if (t.status !== 'completed') continue;
+    const matches = storage.get(keys.matches(t.id)) || [];
+    for (const m of matches) {
+      if (m.status !== 'accepted' || !isDraftComplete(m)) continue;
+      bets.push({ amount: m.amount, challenger: m.challengerName, opponent: m.opponentName, tournament: t.name });
+    }
+  }
+  return bets.sort((a, b) => b.amount - a.amount);
+}
+
+/** Every player's own longest win streak, longest first — the full leaderboard behind "Untouchable". */
+export function allStreaks() {
+  const byPlayer = new Map();
+  for (const t of listTournaments()) {
+    if (t.status !== 'completed') continue;
+    const matches = storage.get(keys.matches(t.id)) || [];
+    if (!matches.length) continue;
+    const golfers = storage.get(keys.golfers(t.id)) || [];
+    const opts = {
+      tieredPenaltyEnabled: t.tieredPenaltyEnabled,
+      cutLine: t.cutLine,
+      currentRound: t.currentRound,
+      cutBonusPoints: t.cutBonusPoints,
+    };
+    for (const m of matches) {
+      if (m.status !== 'accepted' || !m.opponentName || !isDraftComplete(m)) continue;
+      const result = computeMatchResult(m, golfers, opts);
+      if (result.winner === 'push') continue;
+      const date = t.startDate || m.createdAt || '';
+      for (const [name, won] of [[m.challengerName, result.winner === 'challenger'], [m.opponentName, result.winner === 'opponent']]) {
+        const key = name.toLowerCase();
+        if (!byPlayer.has(key)) byPlayer.set(key, { name, matches: [] });
+        byPlayer.get(key).matches.push({ date, won });
+      }
+    }
+  }
+  const rows = [];
+  for (const { name, matches } of byPlayer.values()) {
+    matches.sort((a, b) => a.date.localeCompare(b.date));
+    let run = 0, longest = 0;
+    for (const m of matches) {
+      run = m.won ? run + 1 : 0;
+      if (run > longest) longest = run;
+    }
+    if (longest > 0) rows.push({ name, length: longest });
+  }
+  return rows.sort((a, b) => b.length - a.length);
+}
+
+/** Every pair who's played each other more than once, most-played first — the full leaderboard behind "Rivalry". */
+export function allRivalries() {
+  const pairs = new Map();
+  for (const t of listTournaments()) {
+    if (t.status !== 'completed') continue;
+    const matches = storage.get(keys.matches(t.id)) || [];
+    if (!matches.length) continue;
+    const golfers = storage.get(keys.golfers(t.id)) || [];
+    const opts = {
+      tieredPenaltyEnabled: t.tieredPenaltyEnabled,
+      cutLine: t.cutLine,
+      currentRound: t.currentRound,
+      cutBonusPoints: t.cutBonusPoints,
+    };
+    for (const m of matches) {
+      if (m.status !== 'accepted' || !m.opponentName || !isDraftComplete(m)) continue;
+      const a = m.challengerName, b = m.opponentName;
+      const key = [a.toLowerCase(), b.toLowerCase()].sort().join('|');
+      if (!pairs.has(key)) pairs.set(key, { names: [a, b], count: 0, wins: { [a]: 0, [b]: 0 } });
+      const p = pairs.get(key);
+      p.count += 1;
+      const result = computeMatchResult(m, golfers, opts);
+      if (result.winner === 'challenger') p.wins[a] = (p.wins[a] || 0) + 1;
+      else if (result.winner === 'opponent') p.wins[b] = (p.wins[b] || 0) + 1;
+    }
+  }
+  return [...pairs.values()].filter((p) => p.count > 1).sort((a, b) => b.count - a.count);
+}

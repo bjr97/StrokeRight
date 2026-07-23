@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts';
 import { storage, keys, listTournaments } from '../lib/storage.js';
 import { buildMajors, getStrokerWins, trophyCaseEmojis, formatRank, getStrokerRows, groupSummaryPayouts, buildRecapStoryContext } from '../lib/majors.js';
-import { buildMatchLeaderboard, highRoller, untouchable, biggestRivalry, getPlayerMatches } from '../lib/matchStats.js';
+import { buildMatchLeaderboard, highRoller, untouchable, biggestRivalry, getPlayerMatches, allBets, allStreaks, allRivalries } from '../lib/matchStats.js';
 import { scoreGolfer } from '../lib/scoring.js';
 import { fmtMoney as fm } from '../lib/payouts.js';
 import { fmtDate } from '../lib/format.js';
@@ -97,7 +97,7 @@ export default function History({ session, refreshAll }) {
   // Entries / $ spent / ROI / podiums / golfer picks: only from full-data
   // majors — that's the only place we know every stroker's entry and every
   // paid position, not just the winner's.
-  const { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog, strokerPickCounts, golferPickLog } = useMemo(() => {
+  const { strokerRows, golferRows, longestShot, longestShotLog, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, biggestFavoriteToMissCutLog, golferHistory, picksLoggedLog, strokerPickCounts, golferPickLog } = useMemo(() => {
     const strokerRows = getStrokerRows(majors, allTournaments);
 
     const golferCounts = new Map();
@@ -108,7 +108,9 @@ export default function History({ session, refreshAll }) {
     const strokerPickCounts = new Map(); // strokerName -> Map<golferName, { count, tier, details: [] }> — for Pick Breakdown
     const golferPickLog = new Map(); // golferName -> [{ major, strokerName, entryNum, odds, tier, points, status }] — every pick of this golfer, for the "Most picked golfers" drill-down
     let longestShot = null; // { name, odds, oddsNum, strokerName, major, points, status } — worst odds ever actually picked
+    const longestShotLog = []; // every valid-odds pick, for the "longest shot" leaderboard drill-down
     let biggestFavoriteToMissCut = null; // { name, odds, oddsNum, major } — shortest odds among picks that still missed the cut
+    const biggestFavoriteToMissCutLog = []; // every missed-cut pick with valid odds, for that drill-down
     let totalPicksLogged = 0;
     const picksLoggedLog = []; // [{ major, count }] — picks logged per major, for the "total picks" drill-down
 
@@ -141,8 +143,10 @@ export default function History({ session, refreshAll }) {
           grec.tier = g.tier;
           golferCounts.set(g.name, grec);
           const oddsNum = oddsToNum(g.odds);
-          if (oddsNum >= 0 && (!longestShot || oddsNum > longestShot.oddsNum)) {
-            longestShot = { name: g.name, odds: g.odds, oddsNum, strokerName: e.name, major, points, status: g.status };
+          if (oddsNum >= 0) {
+            const entry = { name: g.name, odds: g.odds, oddsNum, strokerName: e.name, major, points, status: g.status };
+            longestShotLog.push(entry);
+            if (!longestShot || oddsNum > longestShot.oddsNum) longestShot = entry;
           }
 
           const prec = strokerMap.get(g.name) || { count: 0, tier: g.tier, details: [] };
@@ -212,8 +216,10 @@ export default function History({ session, refreshAll }) {
         }
         if (g.status === 'missed_cut') {
           const oddsNum = oddsToNum(g.odds);
-          if (oddsNum >= 0 && (!biggestFavoriteToMissCut || oddsNum < biggestFavoriteToMissCut.oddsNum)) {
-            biggestFavoriteToMissCut = { name: g.name, odds: g.odds, oddsNum, major, points };
+          if (oddsNum >= 0) {
+            const entry = { name: g.name, odds: g.odds, oddsNum, major, points };
+            biggestFavoriteToMissCutLog.push(entry);
+            if (!biggestFavoriteToMissCut || oddsNum < biggestFavoriteToMissCut.oddsNum) biggestFavoriteToMissCut = entry;
           }
         }
       }
@@ -235,7 +241,10 @@ export default function History({ session, refreshAll }) {
       .sort((a, b) => b.sum - a.sum)
       .slice(0, 50);
 
-    return { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog, strokerPickCounts, golferPickLog };
+    return {
+      strokerRows, golferRows, longestShot, longestShotLog, totalPicksLogged, winningestGolfers, cumulativeScoreRows,
+      golferCutTally, biggestFavoriteToMissCut, biggestFavoriteToMissCutLog, golferHistory, picksLoggedLog, strokerPickCounts, golferPickLog,
+    };
   }, [majors, allTournaments]);
 
   const sortedStrokers = useMemo(() => {
@@ -356,19 +365,30 @@ export default function History({ session, refreshAll }) {
 
     let biggestPrize = null, highestScore = null, biggestField = null, toughestTest = null, totalPaidOut = 0;
     const paidOutLog = []; // [{ major, amount }] — $ paid out per major, for the "total paid out" drill-down
+    // Full leaderboards behind Biggest single payday / Highest winning score /
+    // Toughest test / Biggest field — every major that has the relevant
+    // number, not just whichever one holds the record. Highest winning score
+    // and Toughest test share the same list (same underlying number), just
+    // sorted from opposite ends when opened.
+    const biggestPrizeLog = []; // [{ major, who, amount }]
+    const winningScoreLog = []; // [{ major, who, points }]
+    const entryCountLog = []; // [{ major, entryCount }]
     for (const m of majors) {
       if (m.prize != null && (!biggestPrize || m.prize > biggestPrize.amount)) {
         biggestPrize = { amount: m.prize, who: m.winner, major: m };
       }
+      if (m.prize != null) biggestPrizeLog.push({ major: m, who: m.winner, amount: m.prize });
       if (m.points != null && (!highestScore || m.points > highestScore.points)) {
         highestScore = { points: m.points, who: m.winner, major: m };
       }
       if (m.points != null && (!toughestTest || m.points < toughestTest.points)) {
         toughestTest = { points: m.points, who: m.winner, major: m };
       }
+      if (m.points != null) winningScoreLog.push({ major: m, who: m.winner, points: m.points });
       if (m.entryCount != null && (!biggestField || m.entryCount > biggestField.entryCount)) {
         biggestField = { entryCount: m.entryCount, major: m };
       }
+      if (m.entryCount != null) entryCountLog.push({ major: m, entryCount: m.entryCount });
       // Total paid out: every dollar we know changed hands. Full-data majors
       // have every payout on record; summary-only majors only ever recorded
       // the winner's, so that's all we can add for those.
@@ -401,14 +421,19 @@ export default function History({ session, refreshAll }) {
 
     // Nail-biter / runaway: margin between the winning score and the next
     // distinct score group, for full-data majors only (need the runner-up's
-    // actual score, which summary-only majors never recorded).
+    // actual score, which summary-only majors never recorded). Full
+    // leaderboards behind Nail-biter/Runaway winner/Backed into it — every
+    // qualifying major/finish, not just the extreme one.
     let nailBiter = null, runaway = null, cheapestCash = null;
+    const marginLog = []; // [{ major, margin, winner }]
+    const cheapestCashLog = []; // [{ major, who, points, payout }]
     for (const m of majors) {
       if (!m.fullData || !m.ranked?.length) continue;
 
       const totals = [...new Set(m.ranked.map((r) => r.total))].sort((a, b) => b - a);
       if (totals.length >= 2) {
         const margin = totals[0] - totals[1];
+        marginLog.push({ major: m, margin, winner: m.winner });
         if (!nailBiter || margin < nailBiter.margin) nailBiter = { margin, major: m, winner: m.winner };
         if (!runaway || margin > runaway.margin) runaway = { margin, major: m, winner: m.winner };
       }
@@ -417,6 +442,7 @@ export default function History({ session, refreshAll }) {
       for (const r of m.ranked) {
         const payout = m.payouts.get(r.entry.id) || 0;
         if (payout <= 0) continue;
+        cheapestCashLog.push({ major: m, who: r.entry.name, points: r.total, payout });
         if (!cheapestCash || r.total < cheapestCash.points) {
           cheapestCash = { points: r.total, who: r.entry.name, major: m, payout };
         }
@@ -528,9 +554,9 @@ export default function History({ session, refreshAll }) {
       : null;
 
     return {
-      mostWins, topWins, biggestPrize, highestScore, biggestField, bestRoi, ironMan, topGolfer,
-      bridesmaid, topPodiumOnly, toughestTest, totalPaidOut, paidOutLog, mostLoyal, nailBiter, runaway,
-      cheapestCash, longestShot, totalPicksLogged, picksLoggedLog, mrChalk, mrContrarian, minAvgOdds, maxAvgOdds,
+      mostWins, topWins, biggestPrize, biggestPrizeLog, highestScore, biggestField, entryCountLog, bestRoi, ironMan, topGolfer,
+      bridesmaid, topPodiumOnly, toughestTest, winningScoreLog, totalPaidOut, paidOutLog, mostLoyal, nailBiter, runaway, marginLog,
+      cheapestCash, cheapestCashLog, longestShot, totalPicksLogged, picksLoggedLog, mrChalk, mrContrarian, minAvgOdds, maxAvgOdds,
       mcDistribution, mcTotal, mcBucketDetails, calledChampionCount, calledChampionTotal, calledChampionPct, calledChampionLog,
       downTierGambitPct, downTierGambitCount, downTierGambitTotal, downTierGambitLog,
       tieredPenaltyExposurePct, tieredPenaltyExposedCount, tieredPenaltyExposedTotal, tieredPenaltyLog,
@@ -583,12 +609,15 @@ export default function History({ session, refreshAll }) {
       : null;
 
     let longestShot = null;
+    const longestShotLog = []; // every one of this stroker's own valid-odds picks, for the leaderboard drill-down
     for (const [gName, log] of golferPickLog) {
       for (const pick of log) {
         if (pick.strokerName !== strokerFilter) continue;
         const oddsNum = oddsToNum(pick.odds);
-        if (oddsNum >= 0 && (!longestShot || oddsNum > longestShot.oddsNum)) {
-          longestShot = { name: gName, odds: pick.odds, oddsNum, major: pick.major, points: pick.points, status: pick.status };
+        if (oddsNum >= 0) {
+          const entry = { name: gName, odds: pick.odds, oddsNum, major: pick.major, points: pick.points, status: pick.status };
+          longestShotLog.push(entry);
+          if (!longestShot || oddsNum > longestShot.oddsNum) longestShot = entry;
         }
       }
     }
@@ -650,7 +679,7 @@ export default function History({ session, refreshAll }) {
       : [];
 
     return {
-      row, wonMajors, biggestPrize, highestScore, toughestTest, nailBiter, runaway, cheapestCash, longestShot, picksLogged,
+      row, wonMajors, biggestPrize, highestScore, toughestTest, nailBiter, runaway, cheapestCash, longestShot, longestShotLog, picksLogged,
       calledChampionCount, calledChampionTotal,
       calledChampionPct: calledChampionTotal ? Math.round((calledChampionCount / calledChampionTotal) * 100) : null,
       downTierGambitCount, downTierGambitTotal,
@@ -897,8 +926,10 @@ export default function History({ session, refreshAll }) {
           strokerFilter={strokerFilter}
           oneVOne={oneVOneFun}
           strokerRows={strokerRows}
+          golferRows={golferRows}
+          longestShotLog={longestShotLog}
+          biggestFavoriteToMissCutLog={biggestFavoriteToMissCutLog}
           golferHistory={golferHistory}
-          payoutMatrix={payoutMatrix}
           onOpenTrophy={setTrophyFor}
           onOpenPodium={setPodiumFor}
         />
@@ -2243,7 +2274,7 @@ function GolferPickPieModal({ name, log, onClose }) {
   );
 }
 
-function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golferHistory, payoutMatrix, onOpenTrophy, onOpenPodium }) {
+function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golferRows, longestShotLog, biggestFavoriteToMissCutLog, golferHistory, onOpenTrophy, onOpenPodium }) {
   const [modal, setModal] = useState(null); // { type: 'rows'|'namePicker'|'matches'|'majorSummary', ... } or null
 
   if (!fun) return <div className="text-muted text-sm">No past majors yet.</div>;
@@ -2252,21 +2283,6 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
   function openRows(title, subtitle, rows) { setModal({ type: 'rows', title, subtitle, rows }); }
   function openNamePicker(title, names, onPick) { setModal({ type: 'namePicker', title, names, onPick }); }
   function openMatches(title, matches, perspective) { setModal({ type: 'matches', title, matches, perspective }); }
-  function openMajorSummary(major) {
-    const row = payoutMatrix.rows.find((r) => r.major.id === major.id);
-    if (row) setModal({ type: 'majorSummary', major, row });
-  }
-  function openMajorStandings(major, subtitle) {
-    const rows = (major.ranked || []).map((r) => {
-      const payout = major.payouts?.get(r.entry.id) || 0;
-      return {
-        key: r.entry.id,
-        primary: `${r.rank}. ${r.entry.name}`,
-        value: `${r.total >= 0 ? '+' : ''}${r.total} pts${payout > 0 ? ` · ${fm(payout)}` : ''}`,
-      };
-    });
-    openRows(major.name, subtitle || `${fmtDate(major.date)} · ${major.entryCount ?? rows.length} entries`, rows);
-  }
   function openGolferRows(name, tier, rows, subtitle) {
     setModal({
       type: 'rows',
@@ -2274,21 +2290,6 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
       subtitle,
       rows,
     });
-  }
-  function openFanFavorite() {
-    if (!fun.topGolfer) return;
-    const hist = [...(golferHistory.get(fun.topGolfer.name) || [])].sort((a, b) => new Date(b.major.date) - new Date(a.major.date));
-    openGolferRows(
-      fun.topGolfer.name, fun.topGolfer.tier,
-      hist.map((h, i) => ({
-        key: i,
-        primary: h.major.name,
-        secondary: `${fmtDate(h.major.date)} · ${h.status === 'made_cut' ? 'Made cut' : h.status === 'missed_cut' ? 'Missed cut' : h.status}`,
-        value: `${h.points >= 0 ? '+' : ''}${h.points} pts`,
-        valueClass: h.points >= 0 ? 'text-accent' : 'text-danger',
-      })),
-      `Picked ${fun.topGolfer.count}× across full-data majors`
-    );
   }
 
   const poolCards = [
@@ -2364,20 +2365,25 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
       sub: fun.biggestFavoriteToMissCut
         ? `${fun.biggestFavoriteToMissCut.odds} odds · ${fun.biggestFavoriteToMissCut.major.name}`
         : 'Not enough data yet',
-      onClick: fun.biggestFavoriteToMissCut ? () => openGolferRows(
-        fun.biggestFavoriteToMissCut.name, undefined,
-        [{
-          key: 0, primary: fun.biggestFavoriteToMissCut.major.name, secondary: fmtDate(fun.biggestFavoriteToMissCut.major.date),
-          value: `${fun.biggestFavoriteToMissCut.odds} odds`, valueClass: 'text-danger',
-        }],
-        'Missed the cut despite the shortest odds among every missed-cut pick'
+      onClick: biggestFavoriteToMissCutLog.length ? () => openRows(
+        'Biggest favorites to miss the cut',
+        'Every missed-cut pick, shortest odds (biggest favorite) first',
+        [...biggestFavoriteToMissCutLog].sort((a, b) => a.oddsNum - b.oddsNum).slice(0, 25).map((p, i) => ({
+          key: i, primary: p.name, secondary: `${p.major.name} · ${fmtDate(p.major.date)}`,
+          value: `${p.odds} odds`, valueClass: 'text-danger',
+        }))
       ) : undefined,
     },
     {
       label: 'Biggest single payday',
       value: fun.biggestPrize ? fm(fun.biggestPrize.amount) : '—',
       sub: fun.biggestPrize ? `${fun.biggestPrize.who} · ${fun.biggestPrize.major.name}` : '',
-      onClick: fun.biggestPrize ? () => openMajorSummary(fun.biggestPrize.major) : undefined,
+      onClick: fun.biggestPrizeLog.length ? () => openRows(
+        'Biggest paydays — by major', 'Winner’s prize, biggest first',
+        [...fun.biggestPrizeLog].sort((a, b) => b.amount - a.amount).map((p, i) => ({
+          key: i, primary: p.major.name, secondary: `${p.who} · ${fmtDate(p.major.date)}`, value: fm(p.amount),
+        }))
+      ) : undefined,
     },
     {
       label: 'Best ROI',
@@ -2407,82 +2413,120 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
       label: 'Fan favorite golfer',
       value: fun.topGolfer?.name || '—',
       sub: fun.topGolfer ? `Picked ${fun.topGolfer.count}× across full-data majors` : 'Not enough data yet',
-      onClick: fun.topGolfer ? openFanFavorite : undefined,
+      onClick: golferRows.length ? () => openRows(
+        'Most picked golfers overall', 'Full-data majors only, most picked first',
+        golferRows.map((g, i) => ({ key: i, primary: g.name, value: `${g.count}×` }))
+      ) : undefined,
     },
     {
       label: "Fan favorite's make-cut rate",
       value: fun.fanFavoriteCutRate != null ? `${fun.fanFavoriteCutRate}%` : '—',
       sub: fun.fanFavoriteCutRate != null ? `How often ${fun.topGolfer.name} made the cut when picked` : 'Not enough data yet',
-      onClick: fun.topGolfer ? openFanFavorite : undefined,
+      onClick: fun.topGolfer ? () => {
+        const hist = [...(golferHistory.get(fun.topGolfer.name) || [])]
+          .filter((h) => h.status === 'made_cut' || h.status === 'missed_cut')
+          .sort((a, b) => new Date(b.major.date) - new Date(a.major.date));
+        openGolferRows(
+          fun.topGolfer.name, fun.topGolfer.tier,
+          hist.map((h, i) => ({
+            key: i, primary: h.major.name, secondary: fmtDate(h.major.date),
+            value: h.status === 'made_cut' ? '✓ Made cut' : '✗ Missed cut',
+            valueClass: h.status === 'made_cut' ? 'text-accent' : 'text-danger',
+          })),
+          `${fun.fanFavoriteCutRate}% make-cut rate across ${hist.length} start${hist.length === 1 ? '' : 's'}`
+        );
+      } : undefined,
     },
     {
       label: 'Always the bridesmaid',
       value: fun.bridesmaid.length ? fun.bridesmaid.map((r) => r.name).join(' & ') : '—',
       sub: fun.topPodiumOnly > 0 ? `Paid out ${fun.topPodiumOnly}× without ever winning` : 'Not enough data yet',
-      onClick: fun.bridesmaid.length ? () => {
-        if (fun.bridesmaid.length === 1) onOpenPodium({ name: fun.bridesmaid[0].name, finishes: fun.bridesmaid[0].podiumFinishes });
-        else openNamePicker('Always the bridesmaid — pick a name', fun.bridesmaid.map((r) => r.name), (n) => {
-          const row = fun.bridesmaid.find((r) => r.name === n);
-          onOpenPodium({ name: n, finishes: row.podiumFinishes });
-          closeModal();
-        });
-      } : undefined,
+      onClick: fun.topPodiumOnly > 0 ? () => openRows(
+        'Always the bridesmaid — leaderboard', 'Paid finishes that were never a win, most first',
+        strokerRows.filter((r) => r.podiumOnly > 0).sort((a, b) => b.podiumOnly - a.podiumOnly).map((r) => ({
+          key: r.name, primary: r.name, value: `${r.podiumOnly}×`,
+        }))
+      ) : undefined,
     },
     {
       label: 'Highest winning score',
       value: fun.highestScore ? `${fun.highestScore.points >= 0 ? '+' : ''}${fun.highestScore.points} pts` : '—',
       sub: fun.highestScore ? `${fun.highestScore.who} · ${fun.highestScore.major.name}` : '',
-      onClick: fun.highestScore ? () => openMajorSummary(fun.highestScore.major) : undefined,
+      onClick: fun.winningScoreLog.length ? () => openRows(
+        'Winning scores — by major', 'Highest first',
+        [...fun.winningScoreLog].sort((a, b) => b.points - a.points).map((p, i) => ({
+          key: i, primary: p.major.name, secondary: p.who,
+          value: `${p.points >= 0 ? '+' : ''}${p.points} pts`, valueClass: p.points >= 0 ? 'text-accent' : 'text-danger',
+        }))
+      ) : undefined,
     },
     {
       label: 'Biggest field',
       value: fun.biggestField ? `${fun.biggestField.entryCount} entries` : '—',
       sub: fun.biggestField?.major?.name || '',
-      onClick: fun.biggestField ? () => openMajorStandings(fun.biggestField.major) : undefined,
+      onClick: fun.entryCountLog.length ? () => openRows(
+        'Biggest fields — by major', 'Most entries first',
+        [...fun.entryCountLog].sort((a, b) => b.entryCount - a.entryCount).map((p, i) => ({
+          key: i, primary: p.major.name, value: `${p.entryCount} entries`,
+        }))
+      ) : undefined,
     },
     {
       label: 'Toughest test',
       value: fun.toughestTest ? `${fun.toughestTest.points >= 0 ? '+' : ''}${fun.toughestTest.points} pts` : '—',
       sub: fun.toughestTest ? `Lowest winning score · ${fun.toughestTest.who} · ${fun.toughestTest.major.name}` : '',
-      onClick: fun.toughestTest ? () => openMajorSummary(fun.toughestTest.major) : undefined,
+      onClick: fun.winningScoreLog.length ? () => openRows(
+        'Winning scores — by major', 'Lowest (toughest) first',
+        [...fun.winningScoreLog].sort((a, b) => a.points - b.points).map((p, i) => ({
+          key: i, primary: p.major.name, secondary: p.who,
+          value: `${p.points >= 0 ? '+' : ''}${p.points} pts`, valueClass: p.points >= 0 ? 'text-accent' : 'text-danger',
+        }))
+      ) : undefined,
     },
     {
       label: 'Nail-biter',
       value: fun.nailBiter ? `${fun.nailBiter.margin} pt${fun.nailBiter.margin === 1 ? '' : 's'}` : '—',
       sub: fun.nailBiter ? `Closest margin · ${fun.nailBiter.winner} · ${fun.nailBiter.major.name}` : 'Not enough data yet',
-      onClick: fun.nailBiter ? () => openMajorStandings(
-        fun.nailBiter.major,
-        `Margin: ${fun.nailBiter.margin} pt${fun.nailBiter.margin === 1 ? '' : 's'} · ${fmtDate(fun.nailBiter.major.date)}`
+      onClick: fun.marginLog.length ? () => openRows(
+        'Winning margins — by major', 'Closest first',
+        [...fun.marginLog].sort((a, b) => a.margin - b.margin).map((p, i) => ({
+          key: i, primary: p.major.name, secondary: p.winner, value: `${p.margin} pt${p.margin === 1 ? '' : 's'}`,
+        }))
       ) : undefined,
     },
     {
       label: 'Runaway winner',
       value: fun.runaway ? `${fun.runaway.margin} pts` : '—',
       sub: fun.runaway ? `Biggest margin · ${fun.runaway.winner} · ${fun.runaway.major.name}` : 'Not enough data yet',
-      onClick: fun.runaway ? () => openMajorStandings(
-        fun.runaway.major,
-        `Margin: ${fun.runaway.margin} pts · ${fmtDate(fun.runaway.major.date)}`
+      onClick: fun.marginLog.length ? () => openRows(
+        'Winning margins — by major', 'Biggest first',
+        [...fun.marginLog].sort((a, b) => b.margin - a.margin).map((p, i) => ({
+          key: i, primary: p.major.name, secondary: p.winner, value: `${p.margin} pt${p.margin === 1 ? '' : 's'}`,
+        }))
       ) : undefined,
     },
     {
       label: 'Longest shot picked',
       value: fun.longestShot ? fun.longestShot.name : '—',
       sub: fun.longestShot ? `${fun.longestShot.odds} odds — somebody believed` : 'Not enough data yet',
-      onClick: fun.longestShot ? () => openGolferRows(
-        fun.longestShot.name, undefined,
-        [{
-          key: 0, primary: fun.longestShot.major.name,
-          secondary: `Picked by ${fun.longestShot.strokerName} · ${fun.longestShot.status === 'made_cut' ? 'Made cut' : fun.longestShot.status === 'missed_cut' ? 'Missed cut' : fun.longestShot.status}`,
-          value: `${fun.longestShot.odds} odds`,
-        }],
-        `${fun.longestShot.points >= 0 ? '+' : ''}${fun.longestShot.points} pts that event`
+      onClick: longestShotLog.length ? () => openRows(
+        'Longest shots picked', 'Every pick, longest odds first',
+        [...longestShotLog].sort((a, b) => b.oddsNum - a.oddsNum).slice(0, 25).map((p, i) => ({
+          key: i, primary: p.name, secondary: `${p.strokerName} · ${p.major.name}`, value: `${p.odds} odds`,
+        }))
       ) : undefined,
     },
     {
       label: 'Backed into it',
       value: fun.cheapestCash != null ? `${fun.cheapestCash.points >= 0 ? '+' : ''}${fun.cheapestCash.points} pts` : '—',
       sub: fun.cheapestCash ? `Lowest score to still cash · ${fun.cheapestCash.who} · ${fm(fun.cheapestCash.payout)}` : 'Not enough data yet',
-      onClick: fun.cheapestCash ? () => openMajorSummary(fun.cheapestCash.major) : undefined,
+      onClick: fun.cheapestCashLog.length ? () => openRows(
+        'Backed into it — every paid finish', 'Lowest score to still cash, first',
+        [...fun.cheapestCashLog].sort((a, b) => a.points - b.points).slice(0, 25).map((p, i) => ({
+          key: i, primary: p.who, secondary: p.major.name,
+          value: `${p.points >= 0 ? '+' : ''}${p.points} pts · ${fm(p.payout)}`,
+        }))
+      ) : undefined,
     },
     {
       label: 'Most loyal, still ringless',
@@ -2548,19 +2592,20 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
       label: 'High roller',
       value: oneVOne?.highRoller ? fm(oneVOne.highRoller.amount) : '—',
       sub: oneVOne?.highRoller ? `${oneVOne.highRoller.challenger} vs ${oneVOne.highRoller.opponent} · ${oneVOne.highRoller.tournament}` : 'No settled 1v1 matches yet',
-      onClick: oneVOne?.highRoller ? () => {
-        const all = getPlayerMatches(oneVOne.highRoller.challenger);
-        const match = all.filter((m) => m.tournamentName === oneVOne.highRoller.tournament && m.opponent === oneVOne.highRoller.opponent && m.amount === oneVOne.highRoller.amount);
-        openMatches('Biggest bet ever', match.length ? match : all, oneVOne.highRoller.challenger);
-      } : undefined,
+      onClick: oneVOne?.highRoller ? () => openRows(
+        'High rollers — every settled bet', 'Biggest first',
+        allBets().slice(0, 25).map((b, i) => ({
+          key: i, primary: `${b.challenger} vs ${b.opponent}`, secondary: b.tournament, value: fm(b.amount),
+        }))
+      ) : undefined,
     },
     {
       label: 'Untouchable',
       value: oneVOne?.untouchable ? `${oneVOne.untouchable.length} in a row` : '—',
       sub: oneVOne?.untouchable ? `${oneVOne.untouchable.name} · longest 1v1 win streak` : 'No settled 1v1 matches yet',
-      onClick: oneVOne?.untouchable ? () => openMatches(
-        `${oneVOne.untouchable.name}'s matches — win streak: ${oneVOne.untouchable.length}`,
-        getPlayerMatches(oneVOne.untouchable.name), oneVOne.untouchable.name
+      onClick: oneVOne?.untouchable ? () => openRows(
+        'Longest 1v1 win streaks', "Each player's own best, longest first",
+        allStreaks().map((s, i) => ({ key: i, primary: s.name, value: `${s.length} in a row` }))
       ) : undefined,
     },
     {
@@ -2569,10 +2614,14 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
       sub: oneVOne?.rivalry
         ? `${oneVOne.rivalry.count} matches · ${oneVOne.rivalry.names.map((n) => `${n} ${oneVOne.rivalry.wins[n] || 0}`).join(', ')}`
         : 'Not enough head-to-head history yet',
-      onClick: oneVOne?.rivalry ? () => {
-        const [a, b] = oneVOne.rivalry.names;
-        openMatches(`${a} vs ${b}`, getPlayerMatches(a).filter((m) => m.opponent === b), a);
-      } : undefined,
+      onClick: oneVOne?.rivalry ? () => openRows(
+        'Biggest rivalries', 'Most head-to-head matches first',
+        allRivalries().map((p, i) => ({
+          key: i, primary: p.names.join(' vs '),
+          secondary: p.names.map((n) => `${n} ${p.wins[n] || 0}`).join(', '),
+          value: `${p.count} matches`,
+        }))
+      ) : undefined,
     },
   ];
 
@@ -2630,48 +2679,72 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
       label: 'Highest winning score',
       value: pf.highestScore ? `${pf.highestScore.points >= 0 ? '+' : ''}${pf.highestScore.points} pts` : '—',
       sub: pf.highestScore ? pf.highestScore.major.name : 'No wins yet',
-      onClick: pf.highestScore ? () => openMajorSummary(pf.highestScore.major) : undefined,
+      onClick: pf.highestScore ? () => openRows(
+        `${strokerFilter}'s winning scores`, 'Highest first',
+        pf.wonMajors.filter((m) => m.points != null).sort((a, b) => b.points - a.points).map((m, i) => ({
+          key: i, primary: m.name, value: `${m.points >= 0 ? '+' : ''}${m.points} pts`,
+        }))
+      ) : undefined,
     },
     {
       label: 'Toughest test',
       value: pf.toughestTest ? `${pf.toughestTest.points >= 0 ? '+' : ''}${pf.toughestTest.points} pts` : '—',
       sub: pf.toughestTest ? `Your lowest winning score · ${pf.toughestTest.major.name}` : 'No wins yet',
-      onClick: pf.toughestTest ? () => openMajorSummary(pf.toughestTest.major) : undefined,
+      onClick: pf.toughestTest ? () => openRows(
+        `${strokerFilter}'s winning scores`, 'Lowest (toughest) first',
+        pf.wonMajors.filter((m) => m.points != null).sort((a, b) => a.points - b.points).map((m, i) => ({
+          key: i, primary: m.name, value: `${m.points >= 0 ? '+' : ''}${m.points} pts`,
+        }))
+      ) : undefined,
     },
     {
       label: 'Biggest single payday',
       value: pf.biggestPrize ? fm(pf.biggestPrize.amount) : '—',
       sub: pf.biggestPrize ? pf.biggestPrize.major.name : 'No wins yet',
-      onClick: pf.biggestPrize ? () => openMajorSummary(pf.biggestPrize.major) : undefined,
+      onClick: pf.biggestPrize ? () => openRows(
+        `${strokerFilter}'s paydays`, 'Biggest first',
+        pf.wonMajors.filter((m) => m.prize != null).sort((a, b) => b.prize - a.prize).map((m, i) => ({
+          key: i, primary: m.name, value: fm(m.prize),
+        }))
+      ) : undefined,
     },
     {
       label: 'Nail-biter',
       value: pf.nailBiter ? `${pf.nailBiter.margin} pt${pf.nailBiter.margin === 1 ? '' : 's'}` : '—',
       sub: pf.nailBiter ? `Your closest margin · ${pf.nailBiter.major.name}` : 'Not enough data yet',
-      onClick: pf.nailBiter ? () => openMajorStandings(
-        pf.nailBiter.major, `Margin: ${pf.nailBiter.margin} pt${pf.nailBiter.margin === 1 ? '' : 's'} · ${fmtDate(pf.nailBiter.major.date)}`
+      onClick: pf.nailBiter ? () => openRows(
+        `${strokerFilter}'s winning margins`, 'Closest first',
+        pf.wonMajors.filter((m) => m.fullData && m.ranked?.length).map((m) => {
+          const totals = [...new Set(m.ranked.map((r) => r.total))].sort((a, b) => b - a);
+          return totals.length >= 2 ? { major: m, margin: totals[0] - totals[1] } : null;
+        }).filter(Boolean).sort((a, b) => a.margin - b.margin).map((p, i) => ({
+          key: i, primary: p.major.name, value: `${p.margin} pt${p.margin === 1 ? '' : 's'}`,
+        }))
       ) : undefined,
     },
     {
       label: 'Runaway winner',
       value: pf.runaway ? `${pf.runaway.margin} pts` : '—',
       sub: pf.runaway ? `Your biggest margin · ${pf.runaway.major.name}` : 'Not enough data yet',
-      onClick: pf.runaway ? () => openMajorStandings(
-        pf.runaway.major, `Margin: ${pf.runaway.margin} pts · ${fmtDate(pf.runaway.major.date)}`
+      onClick: pf.runaway ? () => openRows(
+        `${strokerFilter}'s winning margins`, 'Biggest first',
+        pf.wonMajors.filter((m) => m.fullData && m.ranked?.length).map((m) => {
+          const totals = [...new Set(m.ranked.map((r) => r.total))].sort((a, b) => b - a);
+          return totals.length >= 2 ? { major: m, margin: totals[0] - totals[1] } : null;
+        }).filter(Boolean).sort((a, b) => b.margin - a.margin).map((p, i) => ({
+          key: i, primary: p.major.name, value: `${p.margin} pt${p.margin === 1 ? '' : 's'}`,
+        }))
       ) : undefined,
     },
     {
       label: 'Longest shot picked',
       value: pf.longestShot ? pf.longestShot.name : '—',
       sub: pf.longestShot ? `${pf.longestShot.odds} odds — you believed` : 'Not enough data yet',
-      onClick: pf.longestShot ? () => openGolferRows(
-        pf.longestShot.name, undefined,
-        [{
-          key: 0, primary: pf.longestShot.major.name,
-          secondary: pf.longestShot.status === 'made_cut' ? 'Made cut' : pf.longestShot.status === 'missed_cut' ? 'Missed cut' : pf.longestShot.status,
-          value: `${pf.longestShot.odds} odds`,
-        }],
-        `${pf.longestShot.points >= 0 ? '+' : ''}${pf.longestShot.points} pts that event`
+      onClick: pf.longestShotLog.length ? () => openRows(
+        `${strokerFilter}'s longest shots picked`, 'Longest odds first',
+        [...pf.longestShotLog].sort((a, b) => b.oddsNum - a.oddsNum).slice(0, 25).map((p, i) => ({
+          key: i, primary: p.name, secondary: p.major.name, value: `${p.odds} odds`,
+        }))
       ) : undefined,
     },
     {
@@ -2679,8 +2752,11 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
       value: pf.cheapestCash != null ? `${pf.cheapestCash.points >= 0 ? '+' : ''}${pf.cheapestCash.points} pts` : '—',
       sub: pf.cheapestCash ? `Lowest score to still cash · ${fm(pf.cheapestCash.payout)}` : 'Not enough data yet',
       onClick: pf.cheapestCash ? () => openRows(
-        'Backed into it', `${strokerFilter}'s lowest score to still cash`,
-        [{ key: 0, primary: pf.cheapestCash.major, secondary: `${fmtDate(pf.cheapestCash.date)} · ${pf.cheapestCash.rank}`, value: fm(pf.cheapestCash.payout) }]
+        `${strokerFilter} — backed into it`, 'Lowest score to still cash, first',
+        pf.row.allPaidFinishes.filter((f) => f.points != null).sort((a, b) => a.points - b.points).map((f, i) => ({
+          key: i, primary: f.major, secondary: `${fmtDate(f.date)} · ${f.rank}`,
+          value: `${f.points >= 0 ? '+' : ''}${f.points} pts · ${fm(f.payout)}`,
+        }))
       ) : undefined,
     },
     {
@@ -2721,10 +2797,15 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
         ? `vs ${pf.highRoller.challenger === strokerFilter ? pf.highRoller.opponent : pf.highRoller.challenger} · ${pf.highRoller.tournament}`
         : 'No settled 1v1 matches yet',
       onClick: pf.highRoller ? () => {
-        const other = pf.highRoller.challenger === strokerFilter ? pf.highRoller.opponent : pf.highRoller.challenger;
-        const all = getPlayerMatches(strokerFilter);
-        const match = all.filter((m) => m.tournamentName === pf.highRoller.tournament && m.opponent === other && m.amount === pf.highRoller.amount);
-        openMatches('Your biggest bet ever', match.length ? match : all, strokerFilter);
+        const lname = strokerFilter.toLowerCase();
+        const bets = allBets().filter((b) => b.challenger.toLowerCase() === lname || b.opponent?.toLowerCase() === lname);
+        openRows(
+          `${strokerFilter}'s biggest bets`, 'Biggest first',
+          bets.map((b, i) => ({
+            key: i, primary: b.challenger.toLowerCase() === lname ? `vs ${b.opponent}` : `vs ${b.challenger}`,
+            secondary: b.tournament, value: fm(b.amount),
+          }))
+        );
       } : undefined,
     },
     {
@@ -2745,8 +2826,16 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
           })()
         : 'Not enough head-to-head history yet',
       onClick: pf.rivalry ? () => {
-        const other = pf.rivalry.names.find((n) => n !== strokerFilter) || pf.rivalry.names[0];
-        openMatches(`${strokerFilter} vs ${other}`, getPlayerMatches(strokerFilter).filter((m) => m.opponent === other), strokerFilter);
+        const lname = strokerFilter.toLowerCase();
+        const rivalries = allRivalries().filter((p) => p.names.some((n) => n.toLowerCase() === lname));
+        openRows(
+          `${strokerFilter}'s rivalries`, 'Most head-to-head matches first',
+          rivalries.map((p, i) => ({
+            key: i, primary: p.names.join(' vs '),
+            secondary: p.names.map((n) => `${n} ${p.wins[n] || 0}`).join(', '),
+            value: `${p.count} matches`,
+          }))
+        );
       } : undefined,
     },
   ].filter(Boolean) : [];
@@ -2865,9 +2954,6 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
       )}
       {modal?.type === 'matches' && (
         <MatchRowsModal title={modal.title} matches={modal.matches} perspective={modal.perspective} onClose={closeModal} />
-      )}
-      {modal?.type === 'majorSummary' && (
-        <MajorSummaryModal major={modal.major} row={modal.row} onClose={closeModal} />
       )}
     </div>
   );
