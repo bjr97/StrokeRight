@@ -26,9 +26,10 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* Bottom mobile nav: pad for the iPhone home-indicator safe area so the
-   fixed bar isn't tucked under it. */
+   fixed bar isn't tucked under it. Half the full inset reads as plenty of
+   buffer without leaving a noticeably oversized gap under the icons. */
 .safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: calc(env(safe-area-inset-bottom) * 0.5);
 }
 
 /* Top header: same idea for the notch/status-bar safe area. Only matters
