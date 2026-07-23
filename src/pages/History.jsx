@@ -27,6 +27,7 @@ export default function History({ session, refreshAll }) {
   const [editing, setEditing] = useState(null);
   const [trophyFor, setTrophyFor] = useState(null);
   const [podiumFor, setPodiumFor] = useState(null); // { name, finishes } or null
+  const [golferWinDetail, setGolferWinDetail] = useState(null); // { name, tier, details } or null
 
   const strokerWins = getStrokerWins(); // cheap; always fresh (unaffected by History's own filters — a trophy case is a fixed fact)
   const [eventTypeFilter, setEventTypeFilter] = useState('all');
@@ -92,16 +93,18 @@ export default function History({ session, refreshAll }) {
   // Entries / $ spent / ROI / podiums / golfer picks: only from full-data
   // majors — that's the only place we know every stroker's entry and every
   // paid position, not just the winner's.
-  const { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut } = useMemo(() => {
+  const { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog } = useMemo(() => {
     const strokerRows = getStrokerRows(majors, allTournaments);
 
     const golferCounts = new Map();
-    const golferWinCounts = new Map();  // name -> { count, tier } — winning-team appearances
+    const golferWinCounts = new Map();  // name -> { count, tier, details: [] } — winning-team appearances
     const golferScoreSum = new Map();   // name -> { sum, majorsCount, tier } — our fantasy points, once per event
     const golferCutTally = new Map();   // name -> { madeCut, missedCut, tier } — once per event, like golferScoreSum
-    let longestShot = null; // { name, odds, oddsNum } — worst odds ever actually picked
+    const golferHistory = new Map();    // name -> [{ major, status, points, tier, odds }] — every event picked in
+    let longestShot = null; // { name, odds, oddsNum, strokerName, major, points, status } — worst odds ever actually picked
     let biggestFavoriteToMissCut = null; // { name, odds, oddsNum, major } — shortest odds among picks that still missed the cut
     let totalPicksLogged = 0;
+    const picksLoggedLog = []; // [{ major, count }] — picks logged per major, for the "total picks" drill-down
 
     for (const t of allTournaments) {
       if (t.status !== 'completed') continue;
@@ -118,21 +121,27 @@ export default function History({ session, refreshAll }) {
         cutBonusPoints: t.cutBonusPoints,
       };
 
+      let picksThisMajor = 0;
       for (const e of tEntries) {
         for (const gid of e.golferIds || []) {
           const g = golferLookup.get(gid);
           if (!g) continue;
           totalPicksLogged += 1;
+          picksThisMajor += 1;
           const grec = golferCounts.get(g.name) || { count: 0, tier: g.tier };
           grec.count += 1;
           grec.tier = g.tier;
           golferCounts.set(g.name, grec);
           const oddsNum = oddsToNum(g.odds);
           if (oddsNum >= 0 && (!longestShot || oddsNum > longestShot.oddsNum)) {
-            longestShot = { name: g.name, odds: g.odds, oddsNum };
+            longestShot = {
+              name: g.name, odds: g.odds, oddsNum, strokerName: e.name, major,
+              points: scoreGolfer(g, scoreOpts).points, status: g.status,
+            };
           }
         }
       }
+      if (picksThisMajor > 0) picksLoggedLog.push({ major, count: picksThisMajor });
 
       // Winning-team golfer appearances — once per major, not per entry, so
       // a golfer picked by both halves of a tie only counts once for that event.
@@ -144,9 +153,13 @@ export default function History({ session, refreshAll }) {
           for (const s of r.scored) {
             if (seenThisMajor.has(s.golfer.name)) continue;
             seenThisMajor.add(s.golfer.name);
-            const wrec = golferWinCounts.get(s.golfer.name) || { count: 0, tier: s.golfer.tier };
+            const wrec = golferWinCounts.get(s.golfer.name) || { count: 0, tier: s.golfer.tier, details: [] };
             wrec.count += 1;
             wrec.tier = s.golfer.tier;
+            wrec.details.push({
+              major, strokerName: r.entry.name, points: s.points, teamTotal: r.total,
+              odds: s.golfer.odds, tier: s.golfer.tier,
+            });
             golferWinCounts.set(s.golfer.name, wrec);
           }
         }
@@ -161,11 +174,17 @@ export default function History({ session, refreshAll }) {
       for (const gid of pickedIdsThisMajor) {
         const g = golferLookup.get(gid);
         if (!g) continue;
+        const points = scoreGolfer(g, scoreOpts).points;
         const srec = golferScoreSum.get(g.name) || { sum: 0, majorsCount: 0, tier: g.tier };
-        srec.sum += scoreGolfer(g, scoreOpts).points;
+        srec.sum += points;
         srec.majorsCount += 1;
         srec.tier = g.tier;
         golferScoreSum.set(g.name, srec);
+
+        const hrec = golferHistory.get(g.name) || [];
+        hrec.push({ major, status: g.status, points, tier: g.tier, odds: g.odds });
+        golferHistory.set(g.name, hrec);
+
         // Cut tally + "biggest favorite to miss the cut" — both keyed off
         // made_cut/missed_cut only (withdrawn/playing don't answer either
         // question), once per golfer per major regardless of pick count.
@@ -178,7 +197,7 @@ export default function History({ session, refreshAll }) {
         if (g.status === 'missed_cut') {
           const oddsNum = oddsToNum(g.odds);
           if (oddsNum >= 0 && (!biggestFavoriteToMissCut || oddsNum < biggestFavoriteToMissCut.oddsNum)) {
-            biggestFavoriteToMissCut = { name: g.name, odds: g.odds, oddsNum, major: major.name };
+            biggestFavoriteToMissCut = { name: g.name, odds: g.odds, oddsNum, major, points };
           }
         }
       }
@@ -190,7 +209,7 @@ export default function History({ session, refreshAll }) {
       .slice(0, 15);
 
     const winningestGolfers = [...golferWinCounts.entries()]
-      .map(([name, r]) => ({ name, count: r.count, tier: r.tier }))
+      .map(([name, r]) => ({ name, count: r.count, tier: r.tier, details: r.details }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 15);
 
@@ -200,7 +219,7 @@ export default function History({ session, refreshAll }) {
       .sort((a, b) => b.sum - a.sum)
       .slice(0, 15);
 
-    return { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut };
+    return { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog };
   }, [majors, allTournaments]);
 
   const sortedStrokers = useMemo(() => {
@@ -283,27 +302,31 @@ export default function History({ session, refreshAll }) {
     const mostWins = strokerRows.filter((r) => r.wins === topWins && topWins > 0);
 
     let biggestPrize = null, highestScore = null, biggestField = null, toughestTest = null, totalPaidOut = 0;
+    const paidOutLog = []; // [{ major, amount }] — $ paid out per major, for the "total paid out" drill-down
     for (const m of majors) {
       if (m.prize != null && (!biggestPrize || m.prize > biggestPrize.amount)) {
-        biggestPrize = { amount: m.prize, who: m.winner, major: m.name };
+        biggestPrize = { amount: m.prize, who: m.winner, major: m };
       }
       if (m.points != null && (!highestScore || m.points > highestScore.points)) {
-        highestScore = { points: m.points, who: m.winner, major: m.name };
+        highestScore = { points: m.points, who: m.winner, major: m };
       }
       if (m.points != null && (!toughestTest || m.points < toughestTest.points)) {
-        toughestTest = { points: m.points, who: m.winner, major: m.name };
+        toughestTest = { points: m.points, who: m.winner, major: m };
       }
       if (m.entryCount != null && (!biggestField || m.entryCount > biggestField.entryCount)) {
-        biggestField = { entryCount: m.entryCount, major: m.name };
+        biggestField = { entryCount: m.entryCount, major: m };
       }
       // Total paid out: every dollar we know changed hands. Full-data majors
       // have every payout on record; summary-only majors only ever recorded
       // the winner's, so that's all we can add for those.
+      let majorPaid = 0;
       if (m.fullData && m.payouts) {
-        for (const amt of m.payouts.values()) totalPaidOut += amt;
+        for (const amt of m.payouts.values()) majorPaid += amt;
       } else if (m.prize != null) {
-        totalPaidOut += m.prize;
+        majorPaid += m.prize;
       }
+      totalPaidOut += majorPaid;
+      if (majorPaid > 0) paidOutLog.push({ major: m, amount: majorPaid });
     }
 
     const withRoi = strokerRows.filter((r) => r.roi != null && r.entries > 0);
@@ -331,8 +354,8 @@ export default function History({ session, refreshAll }) {
       const totals = [...new Set(m.ranked.map((r) => r.total))].sort((a, b) => b - a);
       if (totals.length >= 2) {
         const margin = totals[0] - totals[1];
-        if (!nailBiter || margin < nailBiter.margin) nailBiter = { margin, major: m.name, winner: m.winner };
-        if (!runaway || margin > runaway.margin) runaway = { margin, major: m.name, winner: m.winner };
+        if (!nailBiter || margin < nailBiter.margin) nailBiter = { margin, major: m, winner: m.winner };
+        if (!runaway || margin > runaway.margin) runaway = { margin, major: m, winner: m.winner };
       }
 
       // Lowest score that still cashed a payout — "backed into it."
@@ -340,7 +363,7 @@ export default function History({ session, refreshAll }) {
         const payout = m.payouts.get(r.entry.id) || 0;
         if (payout <= 0) continue;
         if (!cheapestCash || r.total < cheapestCash.points) {
-          cheapestCash = { points: r.total, who: r.entry.name, major: m.name, payout };
+          cheapestCash = { points: r.total, who: r.entry.name, major: m, payout };
         }
       }
     }
@@ -364,42 +387,60 @@ export default function History({ session, refreshAll }) {
     // cut-line penalty. League-wide MC average uses EVERY entry, not just
     // winners, as a baseline to compare the winners-only distribution against.
     const mcBuckets = { '0': 0, '1': 0, '2': 0, '3+': 0 };
+    const mcBucketDetails = { '0': [], '1': [], '2': [], '3+': [] }; // key -> [{ major, entryName, total }]
     let mcTotal = 0;
     let calledChampionCount = 0, calledChampionTotal = 0;
+    const calledChampionLog = []; // [{ major, hit }]
     let downTierGambitCount = 0, downTierGambitTotal = 0;
+    const downTierGambitLog = []; // [{ major, hit }]
     let tieredPenaltyExposedCount = 0, tieredPenaltyExposedTotal = 0;
+    const tieredPenaltyLog = []; // [{ major, hit }]
     let leagueMcSum = 0, leagueEntryCount = 0;
+    const leagueMcLog = []; // [{ major, avg }] — per-major average MC across every entry that major
     const championTierCounts = {};
+    const championTierMajors = {}; // tier -> [{ major, champion }]
     for (const m of majors) {
       if (!m.fullData || !m.ranked?.length) continue;
 
       if (m.championTier != null) {
         championTierCounts[m.championTier] = (championTierCounts[m.championTier] || 0) + 1;
+        (championTierMajors[m.championTier] ||= []).push({ major: m, champion: m.champion });
       }
 
+      let majorMcSum = 0;
       for (const row of m.ranked) {
-        leagueMcSum += row.scored.filter((s) => s.golfer.status === 'missed_cut').length;
+        const mcHere = row.scored.filter((s) => s.golfer.status === 'missed_cut').length;
+        leagueMcSum += mcHere;
+        majorMcSum += mcHere;
         leagueEntryCount++;
       }
+      leagueMcLog.push({ major: m, avg: m.ranked.length ? majorMcSum / m.ranked.length : 0 });
 
       const winningRows = m.ranked.filter((r) => r.rank === m.ranked[0].rank);
       for (const row of winningRows) {
         const mc = row.scored.filter((s) => s.golfer.status === 'missed_cut').length;
         const key = mc >= 3 ? '3+' : String(mc);
         mcBuckets[key]++;
+        mcBucketDetails[key].push({ major: m, entryName: row.entry.name, total: row.total, mc });
         mcTotal++;
 
         if (m.champion) {
           calledChampionTotal++;
-          if (row.scored.some((s) => s.golfer.name === m.champion)) calledChampionCount++;
+          const hit = row.scored.some((s) => s.golfer.name === m.champion);
+          if (hit) calledChampionCount++;
+          calledChampionLog.push({ major: m, hit });
         }
 
         downTierGambitTotal++;
-        if (row.entry.downTierSkipped > 0) downTierGambitCount++;
+        const gambit = row.entry.downTierSkipped > 0;
+        if (gambit) downTierGambitCount++;
+        downTierGambitLog.push({ major: m, hit: gambit });
 
         if (m.tieredPenaltyEnabled) {
           tieredPenaltyExposedTotal++;
-          if (row.scored.some((s) => s.breakdown.tieredPenalty < 0)) tieredPenaltyExposedCount++;
+          const exposed = row.scored.some((s) => s.breakdown.tieredPenalty < 0);
+          if (exposed) tieredPenaltyExposedCount++;
+          tieredPenaltyLog.push({ major: m, hit: exposed });
         }
       }
     }
@@ -433,14 +474,14 @@ export default function History({ session, refreshAll }) {
 
     return {
       mostWins, topWins, biggestPrize, highestScore, biggestField, bestRoi, ironMan, topGolfer,
-      bridesmaid, topPodiumOnly, toughestTest, totalPaidOut, mostLoyal, nailBiter, runaway,
-      cheapestCash, longestShot, totalPicksLogged, mrChalk, mrContrarian, minAvgOdds, maxAvgOdds,
-      mcDistribution, mcTotal, calledChampionCount, calledChampionTotal, calledChampionPct,
-      downTierGambitPct, downTierGambitCount, downTierGambitTotal,
-      tieredPenaltyExposurePct, tieredPenaltyExposedCount, tieredPenaltyExposedTotal,
-      leagueWideAvgMC, championTierDistribution, biggestFavoriteToMissCut, fanFavoriteCutRate,
+      bridesmaid, topPodiumOnly, toughestTest, totalPaidOut, paidOutLog, mostLoyal, nailBiter, runaway,
+      cheapestCash, longestShot, totalPicksLogged, picksLoggedLog, mrChalk, mrContrarian, minAvgOdds, maxAvgOdds,
+      mcDistribution, mcTotal, mcBucketDetails, calledChampionCount, calledChampionTotal, calledChampionPct, calledChampionLog,
+      downTierGambitPct, downTierGambitCount, downTierGambitTotal, downTierGambitLog,
+      tieredPenaltyExposurePct, tieredPenaltyExposedCount, tieredPenaltyExposedTotal, tieredPenaltyLog,
+      leagueWideAvgMC, leagueMcLog, championTierDistribution, championTierMajors, biggestFavoriteToMissCut, fanFavoriteCutRate,
     };
-  }, [majors, strokerRows, golferRows, longestShot, totalPicksLogged, golferCutTally, biggestFavoriteToMissCut]);
+  }, [majors, strokerRows, golferRows, longestShot, totalPicksLogged, picksLoggedLog, golferCutTally, biggestFavoriteToMissCut]);
 
   const oneVOneFun = useMemo(() => ({
     highRoller: highRoller(),
@@ -596,10 +637,10 @@ export default function History({ session, refreshAll }) {
 
           <div className="space-y-2">
             <div className="text-sm font-medium">Winningest golfers</div>
-            <GolferBars rows={winningestGolfers} />
+            <GolferBars rows={winningestGolfers} onSelect={(g) => setGolferWinDetail(g)} />
             <p className="text-xs text-muted">
               Appearances on a winning team, across majors with full data. A tie counts once for each co-winner
-              who had that golfer.
+              who had that golfer. Tap a golfer to see every win.
             </p>
           </div>
 
@@ -620,7 +661,17 @@ export default function History({ session, refreshAll }) {
         </div>
       )}
 
-      {tab === 'fun' && <FunStats fun={fun} oneVOne={oneVOneFun} />}
+      {tab === 'fun' && (
+        <FunStats
+          fun={fun}
+          oneVOne={oneVOneFun}
+          strokerRows={strokerRows}
+          golferHistory={golferHistory}
+          payoutMatrix={payoutMatrix}
+          onOpenTrophy={setTrophyFor}
+          onOpenPodium={setPodiumFor}
+        />
+      )}
 
       {editing && <EditModal record={editing} onSave={save} onCancel={() => setEditing(null)} />}
       {trophyFor && (
@@ -629,20 +680,97 @@ export default function History({ session, refreshAll }) {
       {podiumFor && (
         <PodiumFinishesModal name={podiumFor.name} finishes={podiumFor.finishes} onClose={() => setPodiumFor(null)} />
       )}
+      {golferWinDetail && (
+        <RowsModal
+          title={
+            <span className="flex items-center gap-1.5">
+              <TierDot tier={golferWinDetail.tier} />{golferWinDetail.name}
+            </span>
+          }
+          subtitle={`${golferWinDetail.details.length} winning-team appearance${golferWinDetail.details.length === 1 ? '' : 's'}`}
+          rows={[...golferWinDetail.details]
+            .sort((a, b) => new Date(b.major.date) - new Date(a.major.date))
+            .map((d, i) => ({
+              key: i,
+              primary: d.major.name,
+              secondary: `${d.strokerName}'s team · ${d.odds} odds · Tier ${d.tier}`,
+              value: `${d.points >= 0 ? '+' : ''}${d.points} pts`,
+            }))}
+          onClose={() => setGolferWinDetail(null)}
+        />
+      )}
     </div>
   );
 }
 
-function PodiumFinishesModal({ name, finishes, onClose }) {
+// Generic "list of rows" popup — every row is { key, primary, secondary,
+// value, valueClass }, pre-shaped by the caller. Reused across most of the
+// Fun Stats drill-downs (stroker rankings, per-major logs, pie-slice
+// detail, golfer appearance history) so there's one modal to get right
+// instead of a dozen near-identical ones.
+function RowsModal({ title, subtitle, rows, onClose, emptyText }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-md p-5 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-3 gap-2">
+          <div className="min-w-0">
+            <div className="font-medium">{title}</div>
+            {subtitle && <div className="text-xs text-muted mt-0.5">{subtitle}</div>}
+          </div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2 shrink-0">✕</button>
+        </div>
+        {!rows?.length ? (
+          <div className="text-sm text-muted">{emptyText || 'No data yet.'}</div>
+        ) : (
+          <div className="space-y-2">
+            {rows.map((r, i) => (
+              <div key={r.key ?? i} className="flex items-center justify-between text-sm py-1 border-b border-border last:border-b-0 gap-3">
+                <div className="min-w-0">
+                  <div className="text-text truncate">{r.primary}</div>
+                  {r.secondary && <div className="text-xs text-muted truncate">{r.secondary}</div>}
+                </div>
+                <div className={`shrink-0 tabular-nums font-medium text-right ${r.valueClass || 'text-accent'}`}>{r.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Tiny disambiguation popup for tied leaders (e.g. two strokers sharing
+// "Most decorated") — pick a name, then the real detail modal opens for it.
+function NamePickerModal({ title, names, onPick, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-xs p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-medium">{title}</div>
+          <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+        </div>
+        <div className="space-y-1">
+          {names.map((n) => (
+            <button key={n} onClick={() => onPick(n)} className="w-full text-left px-3 py-2 rounded-lg hover:bg-bg text-sm">
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PodiumFinishesModal({ name, finishes, title, emptyText, onClose }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
       <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
-          <div className="font-medium">{name} — paid, no win</div>
+          <div className="font-medium">{title || `${name} — paid, no win`}</div>
           <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
         </div>
         {!finishes?.length ? (
-          <div className="text-sm text-muted">No paid-no-win finishes yet.</div>
+          <div className="text-sm text-muted">{emptyText || 'No paid-no-win finishes yet.'}</div>
         ) : (
           <div className="space-y-2">
             {finishes.map((f, i) => (
@@ -1175,17 +1303,27 @@ function MatchLeaderboardTable({ rows, sort, onSort }) {
 
 function PlayerMatchesModal({ name, onClose }) {
   const matches = useMemo(() => getPlayerMatches(name), [name]);
+  return <MatchRowsModal title={`${name}'s completed 1v1 matches`} matches={matches} perspective={name} onClose={onClose} />;
+}
+
+// Generic 1v1-match list popup — reused by PlayerMatchesModal (every match
+// for one player) and, in Fun Stats, by High roller (one match), Untouchable
+// (one player's full match list, to show the streak), and Rivalry (just the
+// matches between two specific players). `perspective` labels the "my team"
+// column — every match here was fetched via getPlayerMatches() from that
+// player's point of view.
+function MatchRowsModal({ title, matches, perspective, onClose, emptyText }) {
   const outcomeColor = { win: 'text-accent', loss: 'text-danger', push: 'text-muted' };
   const outcomeLabel = { win: 'Win', loss: 'Loss', push: 'Push' };
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
       <div className="bg-card border border-border rounded-xl w-full max-w-md p-5 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
-          <div className="font-medium">{name}'s completed 1v1 matches</div>
+          <div className="font-medium">{title}</div>
           <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
         </div>
         {!matches.length ? (
-          <div className="text-sm text-muted">No settled matches yet.</div>
+          <div className="text-sm text-muted">{emptyText || 'No settled matches yet.'}</div>
         ) : (
           <div className="space-y-4">
             {matches.map((m, i) => (
@@ -1202,7 +1340,7 @@ function PlayerMatchesModal({ name, onClose }) {
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <div className="text-muted uppercase tracking-wide text-[10px] mb-1">{name}</div>
+                    <div className="text-muted uppercase tracking-wide text-[10px] mb-1">{perspective || 'This side'}</div>
                     <div className="space-y-0.5">
                       {m.myTeam.map((g, gi) => (
                         <div key={gi} className={`flex items-center justify-between ${g.isExtra ? 'text-muted' : ''}`}>
@@ -1233,22 +1371,29 @@ function PlayerMatchesModal({ name, onClose }) {
   );
 }
 
-function GolferBars({ rows }) {
+function GolferBars({ rows, onSelect }) {
   const max = rows[0]?.count || 1;
   return (
     <Card className="p-4 space-y-2">
-      {rows.map((g, i) => (
-        <div key={g.name} className="flex items-center gap-2">
-          <span className="w-5 text-right text-xs text-muted">{i + 1}</span>
-          <span className="w-32 sm:w-40 flex items-center gap-1.5 text-sm truncate">
-            <TierDot tier={g.tier} />{g.name}
-          </span>
-          <div className="flex-1 bg-border rounded h-2 overflow-hidden">
-            <div className="bg-accent h-full rounded" style={{ width: `${(g.count / max) * 100}%` }} />
-          </div>
-          <span className="w-6 text-right text-xs text-muted">{g.count}</span>
-        </div>
-      ))}
+      {rows.map((g, i) => {
+        const Wrap = onSelect ? 'button' : 'div';
+        return (
+          <Wrap
+            key={g.name}
+            onClick={onSelect ? () => onSelect(g) : undefined}
+            className={`flex items-center gap-2 w-full ${onSelect ? 'hover:bg-bg rounded' : ''}`}
+          >
+            <span className="w-5 text-right text-xs text-muted">{i + 1}</span>
+            <span className="w-32 sm:w-40 flex items-center gap-1.5 text-sm truncate">
+              <TierDot tier={g.tier} />{g.name}
+            </span>
+            <div className="flex-1 bg-border rounded h-2 overflow-hidden">
+              <div className="bg-accent h-full rounded" style={{ width: `${(g.count / max) * 100}%` }} />
+            </div>
+            <span className="w-6 text-right text-xs text-muted">{g.count}</span>
+          </Wrap>
+        );
+      })}
       {!rows.length && <div className="text-muted text-sm">No full pick data yet.</div>}
     </Card>
   );
@@ -1291,14 +1436,63 @@ function GolferScoreList({ rows }) {
 const MC_COLORS = ['#3FB950', '#D29922', '#F0883E', '#F85149'];
 const TIER_HEX = { 1: '#58A6FF', 2: '#D29922', 3: '#3FB950', 4: '#79C0FF', 5: '#7DC991', 6: '#D2D250' };
 
-function FunStats({ fun, oneVOne }) {
+function FunStats({ fun, oneVOne, strokerRows, golferHistory, payoutMatrix, onOpenTrophy, onOpenPodium }) {
+  const [modal, setModal] = useState(null); // { type: 'rows'|'namePicker'|'matches'|'majorSummary', ... } or null
+
   if (!fun) return <div className="text-muted text-sm">No past majors yet.</div>;
+
+  function closeModal() { setModal(null); }
+  function openRows(title, subtitle, rows) { setModal({ type: 'rows', title, subtitle, rows }); }
+  function openNamePicker(title, names, onPick) { setModal({ type: 'namePicker', title, names, onPick }); }
+  function openMatches(title, matches, perspective) { setModal({ type: 'matches', title, matches, perspective }); }
+  function openMajorSummary(major) {
+    const row = payoutMatrix.rows.find((r) => r.major.id === major.id);
+    if (row) setModal({ type: 'majorSummary', major, row });
+  }
+  function openMajorStandings(major, subtitle) {
+    const rows = (major.ranked || []).map((r) => {
+      const payout = major.payouts?.get(r.entry.id) || 0;
+      return {
+        key: r.entry.id,
+        primary: `${r.rank}. ${r.entry.name}`,
+        value: `${r.total >= 0 ? '+' : ''}${r.total} pts${payout > 0 ? ` · ${fm(payout)}` : ''}`,
+      };
+    });
+    openRows(major.name, subtitle || `${fmtDate(major.date)} · ${major.entryCount ?? rows.length} entries`, rows);
+  }
+  function openGolferRows(name, tier, rows, subtitle) {
+    setModal({
+      type: 'rows',
+      title: (<span className="flex items-center gap-1.5"><TierDot tier={tier} />{name}</span>),
+      subtitle,
+      rows,
+    });
+  }
+  function openFanFavorite() {
+    if (!fun.topGolfer) return;
+    const hist = [...(golferHistory.get(fun.topGolfer.name) || [])].sort((a, b) => new Date(b.major.date) - new Date(a.major.date));
+    openGolferRows(
+      fun.topGolfer.name, fun.topGolfer.tier,
+      hist.map((h, i) => ({
+        key: i,
+        primary: h.major.name,
+        secondary: `${fmtDate(h.major.date)} · ${h.status === 'made_cut' ? 'Made cut' : h.status === 'missed_cut' ? 'Missed cut' : h.status}`,
+        value: `${h.points >= 0 ? '+' : ''}${h.points} pts`,
+        valueClass: h.points >= 0 ? 'text-accent' : 'text-danger',
+      })),
+      `Picked ${fun.topGolfer.count}× across full-data majors`
+    );
+  }
 
   const cards = [
     {
       label: 'Most decorated',
       value: fun.mostWins.length ? fun.mostWins.map((r) => r.name).join(' & ') : '—',
       sub: fun.topWins > 0 ? `${fun.topWins} major win${fun.topWins > 1 ? 's' : ''}` : 'No wins yet',
+      onClick: fun.mostWins.length ? () => {
+        if (fun.mostWins.length === 1) onOpenTrophy(fun.mostWins[0].name);
+        else openNamePicker('Most decorated — pick a name', fun.mostWins.map((r) => r.name), (n) => { onOpenTrophy(n); closeModal(); });
+      } : undefined,
     },
     {
       label: 'Called the champion',
@@ -1306,6 +1500,14 @@ function FunStats({ fun, oneVOne }) {
       sub: fun.calledChampionPct != null
         ? `${fun.calledChampionCount} of ${fun.calledChampionTotal} winning teams had the real champion on their roster`
         : 'Not enough data yet',
+      onClick: fun.calledChampionLog.length ? () => openRows(
+        'Called the champion',
+        `${fun.calledChampionCount} of ${fun.calledChampionTotal} winning teams had the real champion on their roster`,
+        [...fun.calledChampionLog].sort((a, b) => new Date(b.major.date) - new Date(a.major.date)).map((l, i) => ({
+          key: i, primary: l.major.name, secondary: fmtDate(l.major.date),
+          value: l.hit ? '✓ On roster' : '✗ Missed', valueClass: l.hit ? 'text-accent' : 'text-danger',
+        }))
+      ) : undefined,
     },
     {
       label: 'Down-tier gambit win rate',
@@ -1313,6 +1515,14 @@ function FunStats({ fun, oneVOne }) {
       sub: fun.downTierGambitPct != null
         ? `${fun.downTierGambitCount} of ${fun.downTierGambitTotal} winning teams skipped a tier to double up below it`
         : 'Not enough data yet',
+      onClick: fun.downTierGambitLog.length ? () => openRows(
+        'Down-tier gambit win rate',
+        `${fun.downTierGambitCount} of ${fun.downTierGambitTotal} winning teams skipped a tier to double up below it`,
+        [...fun.downTierGambitLog].sort((a, b) => new Date(b.major.date) - new Date(a.major.date)).map((l, i) => ({
+          key: i, primary: l.major.name, secondary: fmtDate(l.major.date),
+          value: l.hit ? '✓ Gambit' : '—', valueClass: l.hit ? 'text-accent' : 'text-muted',
+        }))
+      ) : undefined,
     },
     {
       label: 'Tiered-penalty exposure',
@@ -1320,118 +1530,231 @@ function FunStats({ fun, oneVOne }) {
       sub: fun.tieredPenaltyExposurePct != null
         ? `${fun.tieredPenaltyExposedCount} of ${fun.tieredPenaltyExposedTotal} winning teams (rule-enabled majors) ate a tiered cut-line penalty`
         : 'No rule-enabled majors yet',
+      onClick: fun.tieredPenaltyLog.length ? () => openRows(
+        'Tiered-penalty exposure',
+        `${fun.tieredPenaltyExposedCount} of ${fun.tieredPenaltyExposedTotal} winning teams (rule-enabled majors) ate a tiered cut-line penalty`,
+        [...fun.tieredPenaltyLog].sort((a, b) => new Date(b.major.date) - new Date(a.major.date)).map((l, i) => ({
+          key: i, primary: l.major.name, secondary: fmtDate(l.major.date),
+          value: l.hit ? '⚠ Penalized' : '✓ Clean', valueClass: l.hit ? 'text-danger' : 'text-accent',
+        }))
+      ) : undefined,
     },
     {
       label: 'League-wide missed-cut average',
       value: fun.leagueWideAvgMC != null ? fun.leagueWideAvgMC.toFixed(2) : '—',
       sub: fun.leagueWideAvgMC != null ? 'Avg. golfers missed cut per entry, every entry, all-time' : 'Not enough data yet',
+      onClick: fun.leagueMcLog.length ? () => openRows(
+        'League-wide missed-cut average — by major',
+        `${fun.leagueWideAvgMC.toFixed(2)} avg all-time`,
+        [...fun.leagueMcLog].sort((a, b) => new Date(b.major.date) - new Date(a.major.date)).map((l, i) => ({
+          key: i, primary: l.major.name, secondary: fmtDate(l.major.date), value: `${l.avg.toFixed(2)} avg MC`, valueClass: 'text-muted',
+        }))
+      ) : undefined,
     },
     {
       label: 'Biggest favorite to miss the cut',
       value: fun.biggestFavoriteToMissCut ? fun.biggestFavoriteToMissCut.name : '—',
       sub: fun.biggestFavoriteToMissCut
-        ? `${fun.biggestFavoriteToMissCut.odds} odds · ${fun.biggestFavoriteToMissCut.major}`
+        ? `${fun.biggestFavoriteToMissCut.odds} odds · ${fun.biggestFavoriteToMissCut.major.name}`
         : 'Not enough data yet',
+      onClick: fun.biggestFavoriteToMissCut ? () => openGolferRows(
+        fun.biggestFavoriteToMissCut.name, undefined,
+        [{
+          key: 0, primary: fun.biggestFavoriteToMissCut.major.name, secondary: fmtDate(fun.biggestFavoriteToMissCut.major.date),
+          value: `${fun.biggestFavoriteToMissCut.odds} odds`, valueClass: 'text-danger',
+        }],
+        'Missed the cut despite the shortest odds among every missed-cut pick'
+      ) : undefined,
     },
     {
       label: 'Biggest single payday',
       value: fun.biggestPrize ? fm(fun.biggestPrize.amount) : '—',
-      sub: fun.biggestPrize ? `${fun.biggestPrize.who} · ${fun.biggestPrize.major}` : '',
+      sub: fun.biggestPrize ? `${fun.biggestPrize.who} · ${fun.biggestPrize.major.name}` : '',
+      onClick: fun.biggestPrize ? () => openMajorSummary(fun.biggestPrize.major) : undefined,
     },
     {
       label: 'Best ROI',
       value: fun.bestRoi ? `${(fun.bestRoi.roi * 100).toFixed(0)}%` : '—',
       sub: fun.bestRoi ? `${fun.bestRoi.name} (full-data majors)` : 'Not enough data yet',
+      onClick: fun.bestRoi ? () => openRows(
+        'Best ROI (all-time)',
+        'Net return — (money earned − entry fees) ÷ entry fees, full-data majors only',
+        strokerRows.filter((r) => r.roi != null && r.entries > 0).sort((a, b) => b.roi - a.roi).map((r) => ({
+          key: r.name, primary: r.name, secondary: `${r.entries} entries · ${fm(r.moneyWon)} won`,
+          value: `${(r.roi * 100).toFixed(0)}%`, valueClass: r.roi >= 0 ? 'text-accent' : 'text-danger',
+        }))
+      ) : undefined,
     },
     {
       label: 'Iron man',
       value: fun.ironMan?.entries ? `${fun.ironMan.entries} entries` : '—',
       sub: fun.ironMan?.entries ? `${fun.ironMan.name} (full-data majors)` : 'Not enough data yet',
+      onClick: fun.ironMan?.entries ? () => openRows(
+        'Iron man — most entries', 'Full-data majors only',
+        strokerRows.filter((r) => r.entries != null).sort((a, b) => b.entries - a.entries).map((r) => ({
+          key: r.name, primary: r.name, secondary: `${r.wins} wins · ${fm(r.feesPaid)} spent`, value: `${r.entries} entries`,
+        }))
+      ) : undefined,
     },
     {
       label: 'Fan favorite golfer',
       value: fun.topGolfer?.name || '—',
       sub: fun.topGolfer ? `Picked ${fun.topGolfer.count}× across full-data majors` : 'Not enough data yet',
+      onClick: fun.topGolfer ? openFanFavorite : undefined,
     },
     {
       label: "Fan favorite's make-cut rate",
       value: fun.fanFavoriteCutRate != null ? `${fun.fanFavoriteCutRate}%` : '—',
       sub: fun.fanFavoriteCutRate != null ? `How often ${fun.topGolfer.name} made the cut when picked` : 'Not enough data yet',
+      onClick: fun.topGolfer ? openFanFavorite : undefined,
     },
     {
       label: 'Always the bridesmaid',
       value: fun.bridesmaid.length ? fun.bridesmaid.map((r) => r.name).join(' & ') : '—',
       sub: fun.topPodiumOnly > 0 ? `Paid out ${fun.topPodiumOnly}× without ever winning` : 'Not enough data yet',
+      onClick: fun.bridesmaid.length ? () => {
+        if (fun.bridesmaid.length === 1) onOpenPodium({ name: fun.bridesmaid[0].name, finishes: fun.bridesmaid[0].podiumFinishes });
+        else openNamePicker('Always the bridesmaid — pick a name', fun.bridesmaid.map((r) => r.name), (n) => {
+          const row = fun.bridesmaid.find((r) => r.name === n);
+          onOpenPodium({ name: n, finishes: row.podiumFinishes });
+          closeModal();
+        });
+      } : undefined,
     },
     {
       label: 'Highest winning score',
       value: fun.highestScore ? `${fun.highestScore.points >= 0 ? '+' : ''}${fun.highestScore.points} pts` : '—',
-      sub: fun.highestScore ? `${fun.highestScore.who} · ${fun.highestScore.major}` : '',
+      sub: fun.highestScore ? `${fun.highestScore.who} · ${fun.highestScore.major.name}` : '',
+      onClick: fun.highestScore ? () => openMajorSummary(fun.highestScore.major) : undefined,
     },
     {
       label: 'Biggest field',
       value: fun.biggestField ? `${fun.biggestField.entryCount} entries` : '—',
-      sub: fun.biggestField?.major || '',
+      sub: fun.biggestField?.major?.name || '',
+      onClick: fun.biggestField ? () => openMajorStandings(fun.biggestField.major) : undefined,
     },
     {
       label: 'Toughest test',
       value: fun.toughestTest ? `${fun.toughestTest.points >= 0 ? '+' : ''}${fun.toughestTest.points} pts` : '—',
-      sub: fun.toughestTest ? `Lowest winning score · ${fun.toughestTest.who} · ${fun.toughestTest.major}` : '',
+      sub: fun.toughestTest ? `Lowest winning score · ${fun.toughestTest.who} · ${fun.toughestTest.major.name}` : '',
+      onClick: fun.toughestTest ? () => openMajorSummary(fun.toughestTest.major) : undefined,
     },
     {
       label: 'Nail-biter',
       value: fun.nailBiter ? `${fun.nailBiter.margin} pt${fun.nailBiter.margin === 1 ? '' : 's'}` : '—',
-      sub: fun.nailBiter ? `Closest margin · ${fun.nailBiter.winner} · ${fun.nailBiter.major}` : 'Not enough data yet',
+      sub: fun.nailBiter ? `Closest margin · ${fun.nailBiter.winner} · ${fun.nailBiter.major.name}` : 'Not enough data yet',
+      onClick: fun.nailBiter ? () => openMajorStandings(
+        fun.nailBiter.major,
+        `Margin: ${fun.nailBiter.margin} pt${fun.nailBiter.margin === 1 ? '' : 's'} · ${fmtDate(fun.nailBiter.major.date)}`
+      ) : undefined,
     },
     {
       label: 'Runaway winner',
       value: fun.runaway ? `${fun.runaway.margin} pts` : '—',
-      sub: fun.runaway ? `Biggest margin · ${fun.runaway.winner} · ${fun.runaway.major}` : 'Not enough data yet',
+      sub: fun.runaway ? `Biggest margin · ${fun.runaway.winner} · ${fun.runaway.major.name}` : 'Not enough data yet',
+      onClick: fun.runaway ? () => openMajorStandings(
+        fun.runaway.major,
+        `Margin: ${fun.runaway.margin} pts · ${fmtDate(fun.runaway.major.date)}`
+      ) : undefined,
     },
     {
       label: 'Longest shot picked',
       value: fun.longestShot ? fun.longestShot.name : '—',
       sub: fun.longestShot ? `${fun.longestShot.odds} odds — somebody believed` : 'Not enough data yet',
+      onClick: fun.longestShot ? () => openGolferRows(
+        fun.longestShot.name, undefined,
+        [{
+          key: 0, primary: fun.longestShot.major.name,
+          secondary: `Picked by ${fun.longestShot.strokerName} · ${fun.longestShot.status === 'made_cut' ? 'Made cut' : fun.longestShot.status === 'missed_cut' ? 'Missed cut' : fun.longestShot.status}`,
+          value: `${fun.longestShot.odds} odds`,
+        }],
+        `${fun.longestShot.points >= 0 ? '+' : ''}${fun.longestShot.points} pts that event`
+      ) : undefined,
     },
     {
       label: 'Backed into it',
       value: fun.cheapestCash != null ? `${fun.cheapestCash.points >= 0 ? '+' : ''}${fun.cheapestCash.points} pts` : '—',
       sub: fun.cheapestCash ? `Lowest score to still cash · ${fun.cheapestCash.who} · ${fm(fun.cheapestCash.payout)}` : 'Not enough data yet',
+      onClick: fun.cheapestCash ? () => openMajorSummary(fun.cheapestCash.major) : undefined,
     },
     {
       label: 'Most loyal, still ringless',
       value: fun.mostLoyal ? `${fun.mostLoyal.entries} entries` : '—',
       sub: fun.mostLoyal ? `${fun.mostLoyal.name} · 0 wins so far` : 'Not enough data yet',
+      onClick: fun.mostLoyal ? () => openRows(
+        `${fun.mostLoyal.name} — entry history`,
+        `${fun.mostLoyal.entries} entries, still ringless`,
+        [...fun.mostLoyal.allFinishes].sort((a, b) => new Date(b.date) - new Date(a.date)).map((f, i) => ({
+          key: i, primary: f.major, secondary: `${fmtDate(f.date)} · ${f.rank}`,
+          value: f.payout > 0 ? fm(f.payout) : `${f.points >= 0 ? '+' : ''}${f.points} pts`,
+          valueClass: f.payout > 0 ? 'text-accent' : 'text-muted',
+        }))
+      ) : undefined,
     },
     {
       label: 'Total paid out',
       value: fm(fun.totalPaidOut),
       sub: 'Every dollar we know changed hands, all-time',
+      onClick: fun.paidOutLog.length ? () => openRows(
+        'Total paid out — by major', `${fm(fun.totalPaidOut)} all-time`,
+        [...fun.paidOutLog].sort((a, b) => new Date(b.major.date) - new Date(a.major.date)).map((l, i) => ({
+          key: i, primary: l.major.name, secondary: fmtDate(l.major.date), value: fm(l.amount),
+        }))
+      ) : undefined,
     },
     {
       label: 'Total picks logged',
       value: `${fun.totalPicksLogged.toLocaleString()} picks`,
       sub: 'Across every full-data major',
+      onClick: fun.picksLoggedLog.length ? () => openRows(
+        'Total picks logged — by major', `${fun.totalPicksLogged.toLocaleString()} picks all-time`,
+        [...fun.picksLoggedLog].sort((a, b) => new Date(b.major.date) - new Date(a.major.date)).map((l, i) => ({
+          key: i, primary: l.major.name, secondary: fmtDate(l.major.date), value: `${l.count} picks`, valueClass: 'text-muted',
+        }))
+      ) : undefined,
     },
     {
       label: 'Mr. Chalk (all-time)',
       value: fun.mrChalk.length ? fun.mrChalk.map((r) => r.name).join(' & ') : '—',
       sub: fun.minAvgOdds != null ? `Avg pick odds +${Math.round(fun.minAvgOdds).toLocaleString()} — plays it safe` : 'Not enough data yet',
+      onClick: fun.mrChalk.length ? () => openRows(
+        'Mr. Chalk — lowest avg pick odds', 'Full-data majors only, safest-first',
+        strokerRows.filter((r) => r.avgPickOdds != null).sort((a, b) => a.avgPickOdds - b.avgPickOdds).map((r) => ({
+          key: r.name, primary: r.name, secondary: `${r.entries ?? '—'} entries`,
+          value: `+${Math.round(r.avgPickOdds).toLocaleString()}`, valueClass: 'text-muted',
+        }))
+      ) : undefined,
     },
     {
       label: 'Mr. Contrarian (all-time)',
       value: fun.mrContrarian.length ? fun.mrContrarian.map((r) => r.name).join(' & ') : '—',
       sub: fun.maxAvgOdds != null ? `Avg pick odds +${Math.round(fun.maxAvgOdds).toLocaleString()} — swings for the fences` : 'Not enough data yet',
+      onClick: fun.mrContrarian.length ? () => openRows(
+        'Mr. Contrarian — highest avg pick odds', 'Full-data majors only, longest-shots-first',
+        strokerRows.filter((r) => r.avgPickOdds != null).sort((a, b) => b.avgPickOdds - a.avgPickOdds).map((r) => ({
+          key: r.name, primary: r.name, secondary: `${r.entries ?? '—'} entries`,
+          value: `+${Math.round(r.avgPickOdds).toLocaleString()}`, valueClass: 'text-muted',
+        }))
+      ) : undefined,
     },
     {
       label: 'High roller',
       value: oneVOne?.highRoller ? fm(oneVOne.highRoller.amount) : '—',
       sub: oneVOne?.highRoller ? `${oneVOne.highRoller.challenger} vs ${oneVOne.highRoller.opponent} · ${oneVOne.highRoller.tournament}` : 'No settled 1v1 matches yet',
+      onClick: oneVOne?.highRoller ? () => {
+        const all = getPlayerMatches(oneVOne.highRoller.challenger);
+        const match = all.filter((m) => m.tournamentName === oneVOne.highRoller.tournament && m.opponent === oneVOne.highRoller.opponent && m.amount === oneVOne.highRoller.amount);
+        openMatches('Biggest bet ever', match.length ? match : all, oneVOne.highRoller.challenger);
+      } : undefined,
     },
     {
       label: 'Untouchable',
       value: oneVOne?.untouchable ? `${oneVOne.untouchable.length} in a row` : '—',
       sub: oneVOne?.untouchable ? `${oneVOne.untouchable.name} · longest 1v1 win streak` : 'No settled 1v1 matches yet',
+      onClick: oneVOne?.untouchable ? () => openMatches(
+        `${oneVOne.untouchable.name}'s matches — win streak: ${oneVOne.untouchable.length}`,
+        getPlayerMatches(oneVOne.untouchable.name), oneVOne.untouchable.name
+      ) : undefined,
     },
     {
       label: 'Rivalry',
@@ -1439,6 +1762,10 @@ function FunStats({ fun, oneVOne }) {
       sub: oneVOne?.rivalry
         ? `${oneVOne.rivalry.count} matches · ${oneVOne.rivalry.names.map((n) => `${n} ${oneVOne.rivalry.wins[n] || 0}`).join(', ')}`
         : 'Not enough head-to-head history yet',
+      onClick: oneVOne?.rivalry ? () => {
+        const [a, b] = oneVOne.rivalry.names;
+        openMatches(`${a} vs ${b}`, getPlayerMatches(a).filter((m) => m.opponent === b), a);
+      } : undefined,
     },
   ];
 
@@ -1449,12 +1776,24 @@ function FunStats({ fun, oneVOne }) {
           <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Winning teams by missed cuts</div>
           <div className="text-xs text-muted mb-2">
             Of {fun.mcTotal} winning team{fun.mcTotal === 1 ? '' : 's'} (full-data majors; ties count each co-winner separately) —
-            how many of the 6 golfers missed the cut.
+            how many of the 6 golfers missed the cut. Click a slice to see the teams.
           </div>
           <div style={{ width: '100%', height: 240 }}>
             <ResponsiveContainer>
               <PieChart>
-                <Pie data={fun.mcDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} label={(d) => `${d.name}: ${d.pct}%`}>
+                <Pie
+                  data={fun.mcDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85}
+                  label={(d) => `${d.name}: ${d.pct}%`}
+                  style={{ cursor: 'pointer' }}
+                  onClick={(d) => {
+                    const key = d.name.replace(' MC', '');
+                    const rows = (fun.mcBucketDetails[key] || []).map((row, i) => ({
+                      key: i, primary: row.entryName, secondary: row.major.name,
+                      value: `${row.mc} MC · ${row.total >= 0 ? '+' : ''}${row.total} pts`,
+                    }));
+                    openRows(`Winning teams — ${d.name}`, `${rows.length} team${rows.length === 1 ? '' : 's'}`, rows);
+                  }}
+                >
                   {fun.mcDistribution.map((d, i) => (
                     <Cell key={d.name} fill={MC_COLORS[['0 MC', '1 MC', '2 MC', '3+ MC'].indexOf(d.name)] || MC_COLORS[i % MC_COLORS.length]} />
                   ))}
@@ -1476,11 +1815,23 @@ function FunStats({ fun, oneVOne }) {
           <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Champion's pool tier</div>
           <div className="text-xs text-muted mb-2">
             What tier the ACTUAL tournament champion was assigned to in this pool's tier system, across every full-data major.
+            Click a slice to see which majors.
           </div>
           <div style={{ width: '100%', height: 240 }}>
             <ResponsiveContainer>
               <PieChart>
-                <Pie data={fun.championTierDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} label={(d) => `${d.name}: ${d.pct}%`}>
+                <Pie
+                  data={fun.championTierDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85}
+                  label={(d) => `${d.name}: ${d.pct}%`}
+                  style={{ cursor: 'pointer' }}
+                  onClick={(d) => {
+                    const tier = Number(d.name.replace('Tier ', ''));
+                    const rows = (fun.championTierMajors[tier] || []).map((row, i) => ({
+                      key: i, primary: row.major.name, secondary: fmtDate(row.major.date), value: row.champion,
+                    }));
+                    openRows(`Champions — ${d.name}`, `${rows.length} major${rows.length === 1 ? '' : 's'}`, rows);
+                  }}
+                >
                   {fun.championTierDistribution.map((d) => (
                     <Cell key={d.name} fill={TIER_HEX[Number(d.name.replace('Tier ', ''))] || '#8B949E'} />
                   ))}
@@ -1499,13 +1850,30 @@ function FunStats({ fun, oneVOne }) {
 
       <div className="grid grid-cols-2 gap-3">
         {cards.map((c) => (
-          <Card key={c.label} className="p-4">
+          <Card
+            key={c.label}
+            className={`p-4 ${c.onClick ? 'cursor-pointer hover:border-accent/50 transition-colors' : ''}`}
+            onClick={c.onClick}
+          >
             <div className="text-[11px] uppercase tracking-wide text-muted mb-1">{c.label}</div>
             <div className="text-lg font-semibold">{c.value}</div>
             <div className="text-xs text-muted mt-0.5">{c.sub}</div>
           </Card>
         ))}
       </div>
+
+      {modal?.type === 'rows' && (
+        <RowsModal title={modal.title} subtitle={modal.subtitle} rows={modal.rows} onClose={closeModal} />
+      )}
+      {modal?.type === 'namePicker' && (
+        <NamePickerModal title={modal.title} names={modal.names} onPick={modal.onPick} onClose={closeModal} />
+      )}
+      {modal?.type === 'matches' && (
+        <MatchRowsModal title={modal.title} matches={modal.matches} perspective={modal.perspective} onClose={closeModal} />
+      )}
+      {modal?.type === 'majorSummary' && (
+        <MajorSummaryModal major={modal.major} row={modal.row} onClose={closeModal} />
+      )}
     </div>
   );
 }

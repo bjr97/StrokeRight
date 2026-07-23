@@ -416,7 +416,7 @@ export function getStrokerRows(majors, allTournaments) {
     if (!major) continue;
 
     for (const e of tEntries) {
-      const rec = full.get(e.name) || { entries: 0, feesPaid: 0, winsFull: 0, podiumOnly: 0, moneyFull: 0, oddsSum: 0, oddsCount: 0, podiumFinishes: [] };
+      const rec = full.get(e.name) || { entries: 0, feesPaid: 0, winsFull: 0, podiumOnly: 0, moneyFull: 0, oddsSum: 0, oddsCount: 0, podiumFinishes: [], allFinishes: [] };
       rec.entries += 1;
       rec.feesPaid += t.entryFee || 0;
       full.set(e.name, rec);
@@ -432,10 +432,18 @@ export function getStrokerRows(majors, allTournaments) {
     }
 
     for (const r of major.ranked || []) {
-      const payout = major.payouts.get(r.entry.id) || 0;
-      if (payout <= 0) continue;
       const rec = full.get(r.entry.name);
       if (!rec) continue;
+      const payout = major.payouts.get(r.entry.id) || 0;
+      rec.allFinishes.push({
+        major: major.name,
+        date: major.date,
+        eventType: major.eventType,
+        rank: formatRank(r.rank, major.ranked),
+        payout,
+        points: r.total,
+      });
+      if (payout <= 0) continue;
       rec.moneyFull += payout;
       if (r.rank === 1) {
         rec.winsFull += 1;
@@ -466,6 +474,7 @@ export function getStrokerRows(majors, allTournaments) {
       moneyWon: l.moneyWon + (f?.moneyFull || 0),
       podiumOnly: f ? f.podiumOnly : null,
       podiumFinishes: f ? f.podiumFinishes : [],
+      allFinishes: f ? f.allFinishes : [],
       entries: f ? f.entries : null,
       feesPaid: f ? f.feesPaid : null,
       roi,
