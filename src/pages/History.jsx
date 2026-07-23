@@ -596,16 +596,33 @@ export default function History({ session, refreshAll }) {
     const picksLogged = [...(strokerPickCounts.get(strokerFilter)?.values() || [])].reduce((sum, r) => sum + r.count, 0);
 
     // Winning-team drill-downs (champion on roster / down-tier gambit /
-    // tiered-penalty exposure), scoped to just this stroker's own winning
-    // entries rather than every winning team in the pool.
+    // tiered-penalty exposure / missed-cut distribution / champion's tier),
+    // scoped to just this stroker's own winning entries rather than every
+    // winning team in the pool — same shape as the pool-wide `fun` versions
+    // so the pie charts can render off either source.
     let calledChampionCount = 0, calledChampionTotal = 0;
     let downTierGambitCount = 0, downTierGambitTotal = 0;
     let tieredPenaltyExposedCount = 0, tieredPenaltyExposedTotal = 0;
+    const mcBuckets = { '0': 0, '1': 0, '2': 0, '3+': 0 };
+    const mcBucketDetails = { '0': [], '1': [], '2': [], '3+': [] };
+    let mcTotal = 0;
+    const championTierCounts = {};
+    const championTierMajors = {};
     for (const m of wonMajors) {
       if (!m.fullData || !m.ranked?.length) continue;
+      if (m.championTier != null) {
+        championTierCounts[m.championTier] = (championTierCounts[m.championTier] || 0) + 1;
+        (championTierMajors[m.championTier] ||= []).push({ major: m, champion: m.champion });
+      }
       const topRank = m.ranked[0].rank;
       const ownWinningRows = m.ranked.filter((r) => r.rank === topRank && r.entry.name === strokerFilter);
       for (const r of ownWinningRows) {
+        const mc = r.scored.filter((s) => s.golfer.status === 'missed_cut').length;
+        const key = mc >= 3 ? '3+' : String(mc);
+        mcBuckets[key]++;
+        mcBucketDetails[key].push({ major: m, entryName: r.entry.name, total: r.total, mc });
+        mcTotal++;
+
         if (m.champion) {
           calledChampionTotal++;
           if (r.scored.some((s) => s.golfer.name === m.champion)) calledChampionCount++;
@@ -618,6 +635,19 @@ export default function History({ session, refreshAll }) {
         }
       }
     }
+    const mcDistribution = mcTotal
+      ? ['0', '1', '2', '3+'].map((key) => ({
+          name: `${key} MC`,
+          value: mcBuckets[key],
+          pct: Math.round((mcBuckets[key] / mcTotal) * 100),
+        })).filter((d) => d.value > 0)
+      : [];
+    const championTierTotal = Object.values(championTierCounts).reduce((a, b) => a + b, 0);
+    const championTierDistribution = championTierTotal
+      ? Object.entries(championTierCounts)
+          .sort((a, b) => Number(a[0]) - Number(b[0]))
+          .map(([tier, count]) => ({ name: `Tier ${tier}`, value: count, pct: Math.round((count / championTierTotal) * 100) }))
+      : [];
 
     return {
       row, wonMajors, biggestPrize, highestScore, toughestTest, nailBiter, runaway, cheapestCash, longestShot, picksLogged,
@@ -627,6 +657,7 @@ export default function History({ session, refreshAll }) {
       downTierGambitPct: downTierGambitTotal ? Math.round((downTierGambitCount / downTierGambitTotal) * 100) : null,
       tieredPenaltyExposedCount, tieredPenaltyExposedTotal,
       tieredPenaltyExposurePct: tieredPenaltyExposedTotal ? Math.round((tieredPenaltyExposedCount / tieredPenaltyExposedTotal) * 100) : null,
+      mcDistribution, mcTotal, mcBucketDetails, championTierDistribution, championTierMajors,
       highRoller: highRoller(strokerFilter),
       untouchable: untouchable(strokerFilter),
       rivalry: biggestRivalry(strokerFilter),
@@ -2615,32 +2646,42 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
 
   const cards = strokerFilter && pf ? personalCards : poolCards;
 
+  // Both pies fall back to the pool-wide `fun` source normally, but scope to
+  // just this stroker's own wins when one's selected — shown whenever that
+  // source actually has data, rather than always hiding on a stroker filter.
+  const pieSrc = strokerFilter && pf ? pf : fun;
+  const mcHeading = strokerFilter ? `${strokerFilter}'s winning teams by missed cuts` : 'Winning teams by missed cuts';
+  const mcSubtext = strokerFilter
+    ? <>Of {pieSrc.mcTotal} of your winning team{pieSrc.mcTotal === 1 ? '' : 's'} (full-data majors; ties count each co-winner separately) — how many of the 6 golfers missed the cut. Click a slice to see the teams.</>
+    : <>Of {pieSrc.mcTotal} winning team{pieSrc.mcTotal === 1 ? '' : 's'} (full-data majors; ties count each co-winner separately) — how many of the 6 golfers missed the cut. Click a slice to see the teams.</>;
+  const tierHeading = strokerFilter ? "Champion's pool tier — your wins" : "Champion's pool tier";
+  const tierSubtext = strokerFilter
+    ? <>What tier the ACTUAL tournament champion was assigned to in this pool's tier system, across your full-data wins. Click a slice to see which majors.</>
+    : <>What tier the ACTUAL tournament champion was assigned to in this pool's tier system, across every full-data major. Click a slice to see which majors.</>;
+
   return (
     <div className="space-y-3">
-      {!strokerFilter && fun.mcDistribution.length > 0 && (
+      {pieSrc.mcDistribution.length > 0 && (
         <Card className="p-4">
-          <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Winning teams by missed cuts</div>
-          <div className="text-xs text-muted mb-2">
-            Of {fun.mcTotal} winning team{fun.mcTotal === 1 ? '' : 's'} (full-data majors; ties count each co-winner separately) —
-            how many of the 6 golfers missed the cut. Click a slice to see the teams.
-          </div>
+          <div className="text-[11px] uppercase tracking-wide text-muted mb-1">{mcHeading}</div>
+          <div className="text-xs text-muted mb-2">{mcSubtext}</div>
           <div style={{ width: '100%', height: 240 }}>
             <ResponsiveContainer>
               <PieChart>
                 <Pie
-                  data={fun.mcDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85}
+                  data={pieSrc.mcDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85}
                   label={(d) => `${d.name}: ${d.pct}%`}
                   style={{ cursor: 'pointer' }}
                   onClick={(d) => {
                     const key = d.name.replace(' MC', '');
-                    const rows = (fun.mcBucketDetails[key] || []).map((row, i) => ({
+                    const rows = (pieSrc.mcBucketDetails[key] || []).map((row, i) => ({
                       key: i, primary: row.entryName, secondary: row.major.name,
                       value: `${row.mc} MC · ${row.total >= 0 ? '+' : ''}${row.total} pts`,
                     }));
                     openRows(`Winning teams — ${d.name}`, `${rows.length} team${rows.length === 1 ? '' : 's'}`, rows);
                   }}
                 >
-                  {fun.mcDistribution.map((d, i) => (
+                  {pieSrc.mcDistribution.map((d, i) => (
                     <Cell key={d.name} fill={MC_COLORS[['0 MC', '1 MC', '2 MC', '3+ MC'].indexOf(d.name)] || MC_COLORS[i % MC_COLORS.length]} />
                   ))}
                 </Pie>
@@ -2656,29 +2697,26 @@ function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golfe
         </Card>
       )}
 
-      {!strokerFilter && fun.championTierDistribution.length > 0 && (
+      {pieSrc.championTierDistribution.length > 0 && (
         <Card className="p-4">
-          <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Champion's pool tier</div>
-          <div className="text-xs text-muted mb-2">
-            What tier the ACTUAL tournament champion was assigned to in this pool's tier system, across every full-data major.
-            Click a slice to see which majors.
-          </div>
+          <div className="text-[11px] uppercase tracking-wide text-muted mb-1">{tierHeading}</div>
+          <div className="text-xs text-muted mb-2">{tierSubtext}</div>
           <div style={{ width: '100%', height: 240 }}>
             <ResponsiveContainer>
               <PieChart>
                 <Pie
-                  data={fun.championTierDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85}
+                  data={pieSrc.championTierDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85}
                   label={(d) => `${d.name}: ${d.pct}%`}
                   style={{ cursor: 'pointer' }}
                   onClick={(d) => {
                     const tier = Number(d.name.replace('Tier ', ''));
-                    const rows = (fun.championTierMajors[tier] || []).map((row, i) => ({
+                    const rows = (pieSrc.championTierMajors[tier] || []).map((row, i) => ({
                       key: i, primary: row.major.name, secondary: fmtDate(row.major.date), value: row.champion,
                     }));
                     openRows(`Champions — ${d.name}`, `${rows.length} major${rows.length === 1 ? '' : 's'}`, rows);
                   }}
                 >
-                  {fun.championTierDistribution.map((d) => (
+                  {pieSrc.championTierDistribution.map((d) => (
                     <Cell key={d.name} fill={TIER_HEX[Number(d.name.replace('Tier ', ''))] || '#8B949E'} />
                   ))}
                 </Pie>
