@@ -1947,22 +1947,28 @@ function GolferScoreList({ rows }) {
   );
 }
 
-// One brand-green scale, light -> deep forest, that every pie chart draws
-// its slice colors from instead of a mixed rainbow palette. Anchored on two
-// colors already used elsewhere in the app (#7DC991 light green / #3FB950
-// accent, see tailwind.config.js tier colors) and stretched down to a much
-// darker forest green at the bottom for real contrast between slices.
-const GREEN_SCALE = ['#7DC991', '#63C27E', '#4FBB6C', '#3FB950', '#359F46', '#2B853C', '#216B31', '#185427', '#103D1B', '#0A2A10'];
+// A single monochrome green ramp kept landing adjacent pie slices on
+// barely-different shades of the same hue no matter how it was reordered —
+// same problem, different index shuffle. This is a proper "golf course"
+// palette instead: 4 widely-spaced greens (light fairway -> deep forest)
+// interleaved with a few golf-associated non-green accents (sand-trap tan,
+// water-hazard blue, wood brown, sunlit khaki rough) so every neighboring
+// slice differs in HUE, not just lightness — the strongest kind of contrast.
+const GOLF_PALETTE = [
+  '#6EDB85', // fairway green (light)
+  '#D9BF8C', // sand trap tan
+  '#123420', // deep forest green (dark)
+  '#6FA8DC', // water hazard blue
+  '#3FB950', // brand green (accent)
+  '#A67C52', // wood / tee marker brown
+  '#23863A', // fairway shadow green (mid)
+  '#D2D250', // sunlit rough khaki
+];
 
-const MC_COLORS = [GREEN_SCALE[1], GREEN_SCALE[4], GREEN_SCALE[6], GREEN_SCALE[9]]; // 0/1/2/3+ MC, light (best) -> dark (worst)
-const TIER_HEX = { 1: GREEN_SCALE[0], 2: GREEN_SCALE[2], 3: GREEN_SCALE[4], 4: GREEN_SCALE[6], 5: GREEN_SCALE[8], 6: GREEN_SCALE[9] };
-// The golfer pick-breakdown popup (Golfer trends) assigns colors to slices
-// in data order, which was walking straight down GREEN_SCALE's smooth ramp —
-// neighboring slices (adjacent event types/years) landed on barely-different
-// shades. Zig-zagging light/dark/light/dark instead means any two adjacent
-// slices are always far apart on the scale, however many there are.
-const PICK_PIE_COLORS = [0, 9, 1, 8, 2, 7, 3, 6, 4, 5].map((i) => GREEN_SCALE[i]);
-const PLACE_PIE_COLORS = [GREEN_SCALE[0], GREEN_SCALE[1], GREEN_SCALE[3], GREEN_SCALE[4], GREEN_SCALE[5], GREEN_SCALE[6], GREEN_SCALE[7], GREEN_SCALE[9]];
+const MC_COLORS = GOLF_PALETTE.slice(0, 4); // 0/1/2/3+ MC
+const TIER_HEX = { 1: GOLF_PALETTE[0], 2: GOLF_PALETTE[1], 3: GOLF_PALETTE[2], 4: GOLF_PALETTE[3], 5: GOLF_PALETTE[4], 6: GOLF_PALETTE[5] };
+const PICK_PIE_COLORS = GOLF_PALETTE;
+const PLACE_PIE_COLORS = GOLF_PALETTE;
 
 // Buckets a list of paid finishes by finishing place — "T3rd" and "3rd"
 // both land in the same "3rd" bucket, since a tie is still that place.
