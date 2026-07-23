@@ -133,14 +133,20 @@ export function knockoutKing(rows) {
   return { names: leaders.map((r) => r.name), wins: topWins };
 }
 
-/** Biggest single settled 1v1 bet ever played (not just proposed). */
-export function highRoller() {
+/**
+ * Biggest single settled 1v1 bet ever played (not just proposed). Pass a
+ * player name to scope it to bets they personally were part of (either
+ * side) instead of the pool-wide record.
+ */
+export function highRoller(name) {
+  const lname = name ? name.toLowerCase() : null;
   let best = null;
   for (const t of listTournaments()) {
     if (t.status !== 'completed') continue;
     const matches = storage.get(keys.matches(t.id)) || [];
     for (const m of matches) {
       if (m.status !== 'accepted' || !isDraftComplete(m)) continue;
+      if (lname && m.challengerName.toLowerCase() !== lname && m.opponentName?.toLowerCase() !== lname) continue;
       if (!best || m.amount > best.amount) {
         best = { amount: m.amount, challenger: m.challengerName, opponent: m.opponentName, tournament: t.name };
       }
@@ -149,8 +155,11 @@ export function highRoller() {
   return best;
 }
 
-/** Longest consecutive-win streak by any single player, ordered by tournament start date. */
-export function untouchable() {
+/**
+ * Longest consecutive-win streak. With no name, the pool-wide record
+ * (any single player); with a name, that one player's own longest streak.
+ */
+export function untouchable(name) {
   const byPlayer = new Map(); // name -> [{ date, won }]
 
   for (const t of listTournaments()) {
@@ -177,21 +186,28 @@ export function untouchable() {
     }
   }
 
+  const lname = name ? name.toLowerCase() : null;
   let best = null;
-  for (const { name, matches } of byPlayer.values()) {
+  for (const { name: pName, matches } of byPlayer.values()) {
+    if (lname && pName.toLowerCase() !== lname) continue;
     matches.sort((a, b) => a.date.localeCompare(b.date));
     let run = 0, longest = 0;
     for (const m of matches) {
       run = m.won ? run + 1 : 0;
       if (run > longest) longest = run;
     }
-    if (longest > 0 && (!best || longest > best.length)) best = { name, length: longest };
+    if (longest > 0 && (!best || longest > best.length)) best = { name: pName, length: longest };
   }
   return best;
 }
 
-/** The pair of players who've played each other the most, with their head-to-head record. */
-export function biggestRivalry() {
+/**
+ * The pair of players who've played each other the most, with their
+ * head-to-head record. With a name, scoped to that player's biggest rival
+ * (the opponent they've faced the most) instead of the pool-wide top pair.
+ */
+export function biggestRivalry(name) {
+  const lname = name ? name.toLowerCase() : null;
   const pairs = new Map(); // "a|b" (sorted) -> { names: [a,b], count, record: {a: wins, b: wins} }
 
   for (const t of listTournaments()) {
@@ -208,6 +224,7 @@ export function biggestRivalry() {
     for (const m of matches) {
       if (m.status !== 'accepted' || !m.opponentName || !isDraftComplete(m)) continue;
       const a = m.challengerName, b = m.opponentName;
+      if (lname && a.toLowerCase() !== lname && b.toLowerCase() !== lname) continue;
       const key = [a.toLowerCase(), b.toLowerCase()].sort().join('|');
       if (!pairs.has(key)) pairs.set(key, { names: [a, b], count: 0, wins: { [a]: 0, [b]: 0 } });
       const p = pairs.get(key);

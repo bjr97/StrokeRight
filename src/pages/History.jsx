@@ -544,6 +544,95 @@ export default function History({ session, refreshAll }) {
     rivalry: biggestRivalry(),
   }), [allTournaments]);
 
+  // Fun Stats, scoped to one stroker (the shared Stroker filter) instead of
+  // the whole pool — every "record" tile is recomputed against just their
+  // own wins/picks/bets rather than the pool-wide leaderboard-topper. Tiles
+  // with no per-person meaning (pool totals, pool-wide distributions, the
+  // most-picked golfer overall) simply aren't included here; FunStats hides
+  // those when a stroker is selected.
+  const personalFun = useMemo(() => {
+    if (!strokerFilter) return null;
+    const row = strokerRows.find((r) => r.name === strokerFilter) || {
+      name: strokerFilter, wins: 0, moneyWon: 0, podiumOnly: null, podiumFinishes: [],
+      allFinishes: [], allPaidFinishes: [], entries: null, feesPaid: null, roi: null, avgPickOdds: null,
+    };
+
+    const wonMajors = majors.filter((m) => (m.winner || '').split(' & ').map((s) => s.trim()).includes(strokerFilter));
+
+    let biggestPrize = null, highestScore = null, toughestTest = null;
+    for (const m of wonMajors) {
+      if (m.prize != null && (!biggestPrize || m.prize > biggestPrize.amount)) biggestPrize = { amount: m.prize, major: m };
+      if (m.points != null && (!highestScore || m.points > highestScore.points)) highestScore = { points: m.points, major: m };
+      if (m.points != null && (!toughestTest || m.points < toughestTest.points)) toughestTest = { points: m.points, major: m };
+    }
+
+    let nailBiter = null, runaway = null;
+    for (const m of wonMajors) {
+      if (!m.fullData || !m.ranked?.length) continue;
+      const totals = [...new Set(m.ranked.map((r) => r.total))].sort((a, b) => b - a);
+      if (totals.length >= 2) {
+        const margin = totals[0] - totals[1];
+        if (!nailBiter || margin < nailBiter.margin) nailBiter = { margin, major: m };
+        if (!runaway || margin > runaway.margin) runaway = { margin, major: m };
+      }
+    }
+
+    const paidWithPoints = row.allPaidFinishes.filter((f) => f.points != null);
+    const cheapestCash = paidWithPoints.length
+      ? paidWithPoints.reduce((a, b) => (b.points < a.points ? b : a))
+      : null;
+
+    let longestShot = null;
+    for (const [gName, log] of golferPickLog) {
+      for (const pick of log) {
+        if (pick.strokerName !== strokerFilter) continue;
+        const oddsNum = oddsToNum(pick.odds);
+        if (oddsNum >= 0 && (!longestShot || oddsNum > longestShot.oddsNum)) {
+          longestShot = { name: gName, odds: pick.odds, oddsNum, major: pick.major, points: pick.points, status: pick.status };
+        }
+      }
+    }
+
+    const picksLogged = [...(strokerPickCounts.get(strokerFilter)?.values() || [])].reduce((sum, r) => sum + r.count, 0);
+
+    // Winning-team drill-downs (champion on roster / down-tier gambit /
+    // tiered-penalty exposure), scoped to just this stroker's own winning
+    // entries rather than every winning team in the pool.
+    let calledChampionCount = 0, calledChampionTotal = 0;
+    let downTierGambitCount = 0, downTierGambitTotal = 0;
+    let tieredPenaltyExposedCount = 0, tieredPenaltyExposedTotal = 0;
+    for (const m of wonMajors) {
+      if (!m.fullData || !m.ranked?.length) continue;
+      const topRank = m.ranked[0].rank;
+      const ownWinningRows = m.ranked.filter((r) => r.rank === topRank && r.entry.name === strokerFilter);
+      for (const r of ownWinningRows) {
+        if (m.champion) {
+          calledChampionTotal++;
+          if (r.scored.some((s) => s.golfer.name === m.champion)) calledChampionCount++;
+        }
+        downTierGambitTotal++;
+        if (r.entry.downTierSkipped > 0) downTierGambitCount++;
+        if (m.tieredPenaltyEnabled) {
+          tieredPenaltyExposedTotal++;
+          if (r.scored.some((s) => s.breakdown.tieredPenalty < 0)) tieredPenaltyExposedCount++;
+        }
+      }
+    }
+
+    return {
+      row, wonMajors, biggestPrize, highestScore, toughestTest, nailBiter, runaway, cheapestCash, longestShot, picksLogged,
+      calledChampionCount, calledChampionTotal,
+      calledChampionPct: calledChampionTotal ? Math.round((calledChampionCount / calledChampionTotal) * 100) : null,
+      downTierGambitCount, downTierGambitTotal,
+      downTierGambitPct: downTierGambitTotal ? Math.round((downTierGambitCount / downTierGambitTotal) * 100) : null,
+      tieredPenaltyExposedCount, tieredPenaltyExposedTotal,
+      tieredPenaltyExposurePct: tieredPenaltyExposedTotal ? Math.round((tieredPenaltyExposedCount / tieredPenaltyExposedTotal) * 100) : null,
+      highRoller: highRoller(strokerFilter),
+      untouchable: untouchable(strokerFilter),
+      rivalry: biggestRivalry(strokerFilter),
+    };
+  }, [strokerFilter, majors, strokerRows, golferPickLog, strokerPickCounts, allTournaments]);
+
   function save(idx, draft) {
     const next = [...history];
     if (idx == null || idx < 0) next.unshift(draft);
@@ -632,7 +721,7 @@ export default function History({ session, refreshAll }) {
         {TABS.map((t) => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => { setTab(t.key); if (t.key === 'golfers') setStrokerFilter(''); }}
             className={`px-3 py-2 text-sm border-b-2 -mb-px whitespace-nowrap shrink-0 ${tab === t.key ? 'border-accent text-text' : 'border-transparent text-muted'}`}
           >
             {t.label}
@@ -654,12 +743,14 @@ export default function History({ session, refreshAll }) {
             options={[{ value: 'all', label: 'All years' }, ...availableYears.map((y) => ({ value: y, label: y }))]}
             className="flex-1 min-w-0 !px-2 py-1.5 text-xs sm:text-sm overflow-hidden text-ellipsis whitespace-nowrap"
           />
-          <Select
-            value={strokerFilter}
-            onChange={setStrokerFilter}
-            options={[{ value: '', label: 'All strokers' }, ...allStrokerNames.map((n) => ({ value: n, label: n }))]}
-            className="flex-1 min-w-0 !px-2 py-1.5 text-xs sm:text-sm overflow-hidden text-ellipsis whitespace-nowrap"
-          />
+          {tab !== 'golfers' && (
+            <Select
+              value={strokerFilter}
+              onChange={setStrokerFilter}
+              options={[{ value: '', label: 'All strokers' }, ...allStrokerNames.map((n) => ({ value: n, label: n }))]}
+              className="flex-1 min-w-0 !px-2 py-1.5 text-xs sm:text-sm overflow-hidden text-ellipsis whitespace-nowrap"
+            />
+          )}
         </div>
         {(eventTypeFilter !== 'all' || yearFilter !== 'all' || strokerFilter) && (
           <button
@@ -771,6 +862,8 @@ export default function History({ session, refreshAll }) {
       {tab === 'fun' && (
         <FunStats
           fun={fun}
+          personalFun={personalFun}
+          strokerFilter={strokerFilter}
           oneVOne={oneVOneFun}
           strokerRows={strokerRows}
           golferHistory={golferHistory}
@@ -2012,7 +2105,7 @@ function GolferPickPieModal({ name, log, onClose }) {
   );
 }
 
-function FunStats({ fun, oneVOne, strokerRows, golferHistory, payoutMatrix, onOpenTrophy, onOpenPodium }) {
+function FunStats({ fun, personalFun, strokerFilter, oneVOne, strokerRows, golferHistory, payoutMatrix, onOpenTrophy, onOpenPodium }) {
   const [modal, setModal] = useState(null); // { type: 'rows'|'namePicker'|'matches'|'majorSummary', ... } or null
 
   if (!fun) return <div className="text-muted text-sm">No past majors yet.</div>;
@@ -2060,7 +2153,7 @@ function FunStats({ fun, oneVOne, strokerRows, golferHistory, payoutMatrix, onOp
     );
   }
 
-  const cards = [
+  const poolCards = [
     {
       label: 'Most decorated',
       value: fun.mostWins.length ? fun.mostWins.map((r) => r.name).join(' & ') : '—',
@@ -2345,9 +2438,186 @@ function FunStats({ fun, oneVOne, strokerRows, golferHistory, payoutMatrix, onOp
     },
   ];
 
+  // One stroker's own version of the tiles above — every "record" is
+  // recomputed against just their wins/picks/bets instead of the pool-wide
+  // leaderboard-topper. Tiles with no per-person meaning (pool totals, the
+  // MC/champion-tier distributions, the fan-favorite golfer) aren't
+  // reproduced here at all.
+  const pf = personalFun;
+  const personalCards = pf ? [
+    {
+      label: 'Major wins',
+      value: `${pf.row.wins}`,
+      sub: pf.row.wins > 0 ? `${pf.row.wins} major win${pf.row.wins > 1 ? 's' : ''}` : 'No wins yet',
+      onClick: pf.row.wins > 0 ? () => onOpenTrophy(strokerFilter) : undefined,
+    },
+    {
+      label: 'ROI',
+      value: pf.row.roi != null ? `${(pf.row.roi * 100).toFixed(0)}%` : '—',
+      sub: pf.row.roi != null ? `${pf.row.entries} entries · ${fm(pf.row.moneyWon)} won` : 'Not enough data yet',
+      onClick: pf.row.allFinishes?.length ? () => openRows(
+        `${strokerFilter} — entry history`, 'Full-data majors only',
+        [...pf.row.allFinishes].sort((a, b) => new Date(b.date) - new Date(a.date)).map((f, i) => ({
+          key: i, primary: f.major, secondary: `${fmtDate(f.date)} · ${f.rank}`,
+          value: f.payout > 0 ? fm(f.payout) : `${f.points >= 0 ? '+' : ''}${f.points} pts`,
+          valueClass: f.payout > 0 ? 'text-accent' : 'text-muted',
+        }))
+      ) : undefined,
+    },
+    {
+      label: 'Entries',
+      value: pf.row.entries != null ? `${pf.row.entries} entries` : '—',
+      sub: pf.row.entries != null ? `${pf.row.wins} wins · ${fm(pf.row.feesPaid)} spent` : 'Not enough data yet',
+      onClick: pf.row.allFinishes?.length ? () => openRows(
+        `${strokerFilter} — entry history`, 'Full-data majors only',
+        [...pf.row.allFinishes].sort((a, b) => new Date(b.date) - new Date(a.date)).map((f, i) => ({
+          key: i, primary: f.major, secondary: `${fmtDate(f.date)} · ${f.rank}`,
+          value: f.payout > 0 ? fm(f.payout) : `${f.points >= 0 ? '+' : ''}${f.points} pts`,
+          valueClass: f.payout > 0 ? 'text-accent' : 'text-muted',
+        }))
+      ) : undefined,
+    },
+    {
+      label: 'Always the bridesmaid',
+      value: pf.row.podiumOnly > 0 ? `${pf.row.podiumOnly}` : '—',
+      sub: pf.row.podiumOnly > 0 ? `Paid out ${pf.row.podiumOnly}× without winning` : 'Not enough data yet',
+      onClick: pf.row.podiumOnly > 0 ? () => onOpenPodium({ name: strokerFilter, finishes: pf.row.podiumFinishes }) : undefined,
+    },
+    pf.row.wins === 0 && pf.row.entries > 0 ? {
+      label: 'Still ringless',
+      value: `${pf.row.entries} entries`,
+      sub: '0 wins so far',
+    } : null,
+    {
+      label: 'Highest winning score',
+      value: pf.highestScore ? `${pf.highestScore.points >= 0 ? '+' : ''}${pf.highestScore.points} pts` : '—',
+      sub: pf.highestScore ? pf.highestScore.major.name : 'No wins yet',
+      onClick: pf.highestScore ? () => openMajorSummary(pf.highestScore.major) : undefined,
+    },
+    {
+      label: 'Toughest test',
+      value: pf.toughestTest ? `${pf.toughestTest.points >= 0 ? '+' : ''}${pf.toughestTest.points} pts` : '—',
+      sub: pf.toughestTest ? `Your lowest winning score · ${pf.toughestTest.major.name}` : 'No wins yet',
+      onClick: pf.toughestTest ? () => openMajorSummary(pf.toughestTest.major) : undefined,
+    },
+    {
+      label: 'Biggest single payday',
+      value: pf.biggestPrize ? fm(pf.biggestPrize.amount) : '—',
+      sub: pf.biggestPrize ? pf.biggestPrize.major.name : 'No wins yet',
+      onClick: pf.biggestPrize ? () => openMajorSummary(pf.biggestPrize.major) : undefined,
+    },
+    {
+      label: 'Nail-biter',
+      value: pf.nailBiter ? `${pf.nailBiter.margin} pt${pf.nailBiter.margin === 1 ? '' : 's'}` : '—',
+      sub: pf.nailBiter ? `Your closest margin · ${pf.nailBiter.major.name}` : 'Not enough data yet',
+      onClick: pf.nailBiter ? () => openMajorStandings(
+        pf.nailBiter.major, `Margin: ${pf.nailBiter.margin} pt${pf.nailBiter.margin === 1 ? '' : 's'} · ${fmtDate(pf.nailBiter.major.date)}`
+      ) : undefined,
+    },
+    {
+      label: 'Runaway winner',
+      value: pf.runaway ? `${pf.runaway.margin} pts` : '—',
+      sub: pf.runaway ? `Your biggest margin · ${pf.runaway.major.name}` : 'Not enough data yet',
+      onClick: pf.runaway ? () => openMajorStandings(
+        pf.runaway.major, `Margin: ${pf.runaway.margin} pts · ${fmtDate(pf.runaway.major.date)}`
+      ) : undefined,
+    },
+    {
+      label: 'Longest shot picked',
+      value: pf.longestShot ? pf.longestShot.name : '—',
+      sub: pf.longestShot ? `${pf.longestShot.odds} odds — you believed` : 'Not enough data yet',
+      onClick: pf.longestShot ? () => openGolferRows(
+        pf.longestShot.name, undefined,
+        [{
+          key: 0, primary: pf.longestShot.major.name,
+          secondary: pf.longestShot.status === 'made_cut' ? 'Made cut' : pf.longestShot.status === 'missed_cut' ? 'Missed cut' : pf.longestShot.status,
+          value: `${pf.longestShot.odds} odds`,
+        }],
+        `${pf.longestShot.points >= 0 ? '+' : ''}${pf.longestShot.points} pts that event`
+      ) : undefined,
+    },
+    {
+      label: 'Backed into it',
+      value: pf.cheapestCash != null ? `${pf.cheapestCash.points >= 0 ? '+' : ''}${pf.cheapestCash.points} pts` : '—',
+      sub: pf.cheapestCash ? `Lowest score to still cash · ${fm(pf.cheapestCash.payout)}` : 'Not enough data yet',
+      onClick: pf.cheapestCash ? () => openRows(
+        'Backed into it', `${strokerFilter}'s lowest score to still cash`,
+        [{ key: 0, primary: pf.cheapestCash.major, secondary: `${fmtDate(pf.cheapestCash.date)} · ${pf.cheapestCash.rank}`, value: fm(pf.cheapestCash.payout) }]
+      ) : undefined,
+    },
+    {
+      label: 'Picks logged',
+      value: `${pf.picksLogged.toLocaleString()} picks`,
+      sub: 'Every golfer you’ve drafted, full-data majors only',
+    },
+    {
+      label: 'Pick style',
+      value: pf.row.avgPickOdds != null ? `+${Math.round(pf.row.avgPickOdds).toLocaleString()}` : '—',
+      sub: pf.row.avgPickOdds != null ? 'Your avg. pick odds — lower means chalk, higher means longshots' : 'Not enough data yet',
+    },
+    {
+      label: 'Called the champion',
+      value: pf.calledChampionPct != null ? `${pf.calledChampionPct}%` : '—',
+      sub: pf.calledChampionPct != null
+        ? `${pf.calledChampionCount} of ${pf.calledChampionTotal} of your winning teams had the real champion on the roster`
+        : 'No wins with tracked champion data yet',
+    },
+    {
+      label: 'Down-tier gambit win rate',
+      value: pf.downTierGambitPct != null ? `${pf.downTierGambitPct}%` : '—',
+      sub: pf.downTierGambitPct != null
+        ? `${pf.downTierGambitCount} of ${pf.downTierGambitTotal} of your winning teams skipped a tier`
+        : 'No wins with tracked pick data yet',
+    },
+    {
+      label: 'Tiered-penalty exposure',
+      value: pf.tieredPenaltyExposurePct != null ? `${pf.tieredPenaltyExposurePct}%` : '—',
+      sub: pf.tieredPenaltyExposurePct != null
+        ? `${pf.tieredPenaltyExposedCount} of ${pf.tieredPenaltyExposedTotal} of your winning teams (rule-enabled majors) ate a penalty`
+        : 'No rule-enabled wins yet',
+    },
+    {
+      label: 'High roller',
+      value: pf.highRoller ? fm(pf.highRoller.amount) : '—',
+      sub: pf.highRoller
+        ? `vs ${pf.highRoller.challenger === strokerFilter ? pf.highRoller.opponent : pf.highRoller.challenger} · ${pf.highRoller.tournament}`
+        : 'No settled 1v1 matches yet',
+      onClick: pf.highRoller ? () => {
+        const other = pf.highRoller.challenger === strokerFilter ? pf.highRoller.opponent : pf.highRoller.challenger;
+        const all = getPlayerMatches(strokerFilter);
+        const match = all.filter((m) => m.tournamentName === pf.highRoller.tournament && m.opponent === other && m.amount === pf.highRoller.amount);
+        openMatches('Your biggest bet ever', match.length ? match : all, strokerFilter);
+      } : undefined,
+    },
+    {
+      label: 'Untouchable',
+      value: pf.untouchable ? `${pf.untouchable.length} in a row` : '—',
+      sub: pf.untouchable ? 'Your longest 1v1 win streak' : 'No settled 1v1 matches yet',
+      onClick: pf.untouchable ? () => openMatches(
+        `Your matches — win streak: ${pf.untouchable.length}`, getPlayerMatches(strokerFilter), strokerFilter
+      ) : undefined,
+    },
+    {
+      label: 'Rivalry',
+      value: pf.rivalry ? (pf.rivalry.names.find((n) => n !== strokerFilter) || pf.rivalry.names[0]) : '—',
+      sub: pf.rivalry
+        ? (() => {
+            const other = pf.rivalry.names.find((n) => n !== strokerFilter) || pf.rivalry.names[0];
+            return `${pf.rivalry.count} matches · you ${pf.rivalry.wins[strokerFilter] || 0} - ${pf.rivalry.wins[other] || 0}`;
+          })()
+        : 'Not enough head-to-head history yet',
+      onClick: pf.rivalry ? () => {
+        const other = pf.rivalry.names.find((n) => n !== strokerFilter) || pf.rivalry.names[0];
+        openMatches(`${strokerFilter} vs ${other}`, getPlayerMatches(strokerFilter).filter((m) => m.opponent === other), strokerFilter);
+      } : undefined,
+    },
+  ].filter(Boolean) : [];
+
+  const cards = strokerFilter && pf ? personalCards : poolCards;
+
   return (
     <div className="space-y-3">
-      {fun.mcDistribution.length > 0 && (
+      {!strokerFilter && fun.mcDistribution.length > 0 && (
         <Card className="p-4">
           <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Winning teams by missed cuts</div>
           <div className="text-xs text-muted mb-2">
@@ -2386,7 +2656,7 @@ function FunStats({ fun, oneVOne, strokerRows, golferHistory, payoutMatrix, onOp
         </Card>
       )}
 
-      {fun.championTierDistribution.length > 0 && (
+      {!strokerFilter && fun.championTierDistribution.length > 0 && (
         <Card className="p-4">
           <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Champion's pool tier</div>
           <div className="text-xs text-muted mb-2">
