@@ -222,7 +222,7 @@ export default function History({ session, refreshAll }) {
     const golferRows = [...golferCounts.entries()]
       .map(([name, r]) => ({ name, count: r.count, tier: r.tier }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 50);
+      .slice(0, 100);
 
     const winningestGolfers = [...golferWinCounts.entries()]
       .map(([name, r]) => ({ name, count: r.count, tier: r.tier, details: r.details }))
