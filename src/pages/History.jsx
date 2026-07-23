@@ -20,7 +20,7 @@ const TABS = [
 
 export default function History({ session, refreshAll }) {
   const [tab, setTab] = useState('majors');
-  const [majorSort, setMajorSort] = useState('year');
+  const [majorWinnerFilter, setMajorWinnerFilter] = useState('');
   const [gSort, setGSort] = useState({ key: 'moneyWon', dir: -1 });
   const [mSort, setMSort] = useState({ key: 'wins', dir: -1 });
   const [expandedId, setExpandedId] = useState(null);
@@ -80,12 +80,23 @@ export default function History({ session, refreshAll }) {
       .map((m) => ({ ...m, recap: storage.get(keys.recap(m.id))?.final || null }));
   }, [allMajors, eventTypeFilter, yearFilter]);
 
+  const majorWinnerNames = useMemo(() => {
+    const names = new Set();
+    for (const m of majors) {
+      if (!m.winner) continue;
+      for (const n of m.winner.split(' & ').map((s) => s.trim()).filter(Boolean)) names.add(n);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [majors]);
+
   const sortedMajors = useMemo(() => {
-    const list = [...majors];
-    if (majorSort === 'year') list.sort((a, b) => new Date(b.date) - new Date(a.date));
-    else list.sort((a, b) => a.name.localeCompare(b.name));
+    const list = majors.filter((m) => {
+      if (!majorWinnerFilter) return true;
+      return (m.winner || '').split(' & ').map((s) => s.trim()).includes(majorWinnerFilter);
+    });
+    list.sort((a, b) => new Date(b.date) - new Date(a.date));
     return list;
-  }, [majors, majorSort]);
+  }, [majors, majorWinnerFilter]);
 
   // ─── Stroker + golfer aggregation ────────────────────────────────────────
   // Wins & $ won: across every major (full data or summary) — and for
@@ -569,20 +580,22 @@ export default function History({ session, refreshAll }) {
 
       {tab === 'majors' && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex gap-2">
-              <button
-                onClick={() => setMajorSort('year')}
-                className={`text-xs px-2.5 py-1.5 rounded-lg border ${majorSort === 'year' ? 'border-accent text-text' : 'border-border text-muted'}`}
-              >
-                Newest first
-              </button>
-              <button
-                onClick={() => setMajorSort('major')}
-                className={`text-xs px-2.5 py-1.5 rounded-lg border ${majorSort === 'major' ? 'border-accent text-text' : 'border-border text-muted'}`}
-              >
-                A–Z by major
-              </button>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Select
+                value={majorWinnerFilter}
+                onChange={setMajorWinnerFilter}
+                options={[{ value: '', label: 'All winners' }, ...majorWinnerNames.map((n) => ({ value: n, label: n }))]}
+                className="text-sm"
+              />
+              {majorWinnerFilter && (
+                <button
+                  onClick={() => setMajorWinnerFilter('')}
+                  className="text-xs text-muted hover:text-text underline"
+                >
+                  Clear
+                </button>
+              )}
             </div>
             {session?.isAdmin && (
               <Button variant="secondary" onClick={() => setEditing({ idx: null, draft: blankRecord() })}>+ Add</Button>
