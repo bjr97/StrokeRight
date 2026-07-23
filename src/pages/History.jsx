@@ -1691,7 +1691,7 @@ function PickBreakdown({ strokerPickCounts, strokerRows, session }) {
     return [...strokerPickCounts.keys()].find((n) => n.toLowerCase() === myNameLower) || '';
   });
   const [compareSelected, setCompareSelected] = useState([]); // up to 4 stroker names
-  const [detail, setDetail] = useState(null); // { name, tier, details } or null
+  const [detail, setDetail] = useState(null); // { name, log } or null — feeds GolferPickPieModal
   const [compareDetail, setCompareDetail] = useState(null); // { title, subtitle, rows } or null
 
   const strokerNames = useMemo(
@@ -1830,7 +1830,7 @@ function PickBreakdown({ strokerPickCounts, strokerRows, session }) {
             <>
               <GolferBars
                 rows={rows}
-                onSelect={(g) => setDetail({ name: g.name, tier: g.tier, details: g.details })}
+                onSelect={(g) => setDetail({ name: g.name, log: g.details.map((d) => ({ ...d, strokerName: selected })) })}
               />
               {totalEntries != null && (
                 <p className="text-xs text-muted">
@@ -1895,24 +1895,7 @@ function PickBreakdown({ strokerPickCounts, strokerRows, session }) {
       )}
 
       {detail && (
-        <RowsModal
-          title={
-            <span className="flex items-center gap-1.5">
-              <TierDot tier={detail.tier} />{detail.name}
-            </span>
-          }
-          subtitle={`Picked by ${selected} · ${detail.details.length}×${totalEntries ? ` · ${Math.round((detail.details.length / totalEntries) * 100)}% of entries` : ''}`}
-          rows={[...detail.details]
-            .sort((a, b) => new Date(b.major.date) - new Date(a.major.date))
-            .map((d, i) => ({
-              key: i,
-              primary: d.major.name,
-              secondary: `Entry ${d.entryNum} · ${d.odds} odds · Tier ${d.tier}`,
-              value: `${d.points >= 0 ? '+' : ''}${d.points} pts`,
-              valueClass: d.points >= 0 ? 'text-accent' : 'text-danger',
-            }))}
-          onClose={() => setDetail(null)}
-        />
+        <GolferPickPieModal name={detail.name} log={detail.log} onClose={() => setDetail(null)} />
       )}
       {compareDetail && (
         <RowsModal
@@ -2163,24 +2146,48 @@ function GolferPickPieModal({ name, log, onClose }) {
 
           {pieData.length ? (
             groupBy === 'year' ? (
-              <div style={{ width: '100%', height: 260 }}>
-                <ResponsiveContainer>
-                  <BarChart data={pieData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="name" stroke="#8B949E" fontSize={11} />
-                    <YAxis stroke="#8B949E" fontSize={11} allowDecimals={false} />
-                    <Tooltip
-                      contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
-                      labelStyle={{ color: '#E6EDF3' }}
-                      formatter={(value, n, props) => [`${value} pick${value === 1 ? '' : 's'} (${props.payload.pct}%)`, 'Picks']}
-                    />
-                    <Bar
-                      dataKey="value" fill="#3FB950" radius={[4, 4, 0, 0]}
-                      style={{ cursor: 'pointer' }}
-                      onClick={(d) => openSlice(d.name)}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <>
+                <div style={{ width: '100%', height: 260 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={pieData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                      <XAxis dataKey="name" stroke="#8B949E" fontSize={11} />
+                      <YAxis stroke="#8B949E" fontSize={11} allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
+                        labelStyle={{ color: '#E6EDF3' }}
+                        formatter={(value, n, props) => [`${value} pick${value === 1 ? '' : 's'} (${props.payload.pct}%)`, 'Picks']}
+                      />
+                      <Bar
+                        dataKey="value" fill="#3FB950" radius={[4, 4, 0, 0]}
+                        style={{ cursor: 'pointer' }}
+                        onClick={(d) => openSlice(d.name)}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <table className="w-full text-xs mt-1">
+                  <thead>
+                    <tr>
+                      <th className="text-left text-muted uppercase tracking-wide pb-1 font-normal">Year</th>
+                      <th className="text-right text-muted uppercase tracking-wide pb-1 font-normal">Picks</th>
+                      <th className="text-right text-muted uppercase tracking-wide pb-1 font-normal">%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pieData.map((d) => (
+                      <tr
+                        key={d.name}
+                        onClick={() => openSlice(d.name)}
+                        className="border-t border-border cursor-pointer hover:bg-bg"
+                      >
+                        <td className="py-1">{d.name}</td>
+                        <td className="py-1 text-right tabular-nums">{d.value}</td>
+                        <td className="py-1 text-right tabular-nums text-muted">{d.pct}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
             ) : (
               <>
                 <div style={{ width: '100%', height: 260 }}>
