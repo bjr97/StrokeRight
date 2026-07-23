@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts';
 import { storage, keys, listTournaments } from '../lib/storage.js';
 import { buildMajors, getStrokerWins, trophyCaseEmojis, formatRank, getStrokerRows } from '../lib/majors.js';
 import { buildMatchLeaderboard, highRoller, untouchable, biggestRivalry, getPlayerMatches } from '../lib/matchStats.js';
@@ -28,6 +28,7 @@ export default function History({ session, refreshAll }) {
   const [trophyFor, setTrophyFor] = useState(null);
   const [podiumFor, setPodiumFor] = useState(null); // { name, finishes } or null
   const [golferWinDetail, setGolferWinDetail] = useState(null); // { name, tier, details } or null
+  const [pickPieFor, setPickPieFor] = useState(null); // golfer name, or null
 
   const strokerWins = getStrokerWins(); // cheap; always fresh (unaffected by History's own filters — a trophy case is a fixed fact)
   const [eventTypeFilter, setEventTypeFilter] = useState('all');
@@ -93,7 +94,7 @@ export default function History({ session, refreshAll }) {
   // Entries / $ spent / ROI / podiums / golfer picks: only from full-data
   // majors — that's the only place we know every stroker's entry and every
   // paid position, not just the winner's.
-  const { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog, strokerPickCounts } = useMemo(() => {
+  const { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog, strokerPickCounts, golferPickLog } = useMemo(() => {
     const strokerRows = getStrokerRows(majors, allTournaments);
 
     const golferCounts = new Map();
@@ -102,6 +103,7 @@ export default function History({ session, refreshAll }) {
     const golferCutTally = new Map();   // name -> { madeCut, missedCut, tier } — once per event, like golferScoreSum
     const golferHistory = new Map();    // name -> [{ major, status, points, tier, odds }] — every event picked in
     const strokerPickCounts = new Map(); // strokerName -> Map<golferName, { count, tier, details: [] }> — for Pick Breakdown
+    const golferPickLog = new Map(); // golferName -> [{ major, strokerName, entryNum, odds, tier, points, status }] — every pick of this golfer, for the "Most picked golfers" drill-down
     let longestShot = null; // { name, odds, oddsNum, strokerName, major, points, status } — worst odds ever actually picked
     let biggestFavoriteToMissCut = null; // { name, odds, oddsNum, major } — shortest odds among picks that still missed the cut
     let totalPicksLogged = 0;
@@ -130,23 +132,25 @@ export default function History({ session, refreshAll }) {
           if (!g) continue;
           totalPicksLogged += 1;
           picksThisMajor += 1;
+          const points = scoreGolfer(g, scoreOpts).points;
           const grec = golferCounts.get(g.name) || { count: 0, tier: g.tier };
           grec.count += 1;
           grec.tier = g.tier;
           golferCounts.set(g.name, grec);
           const oddsNum = oddsToNum(g.odds);
           if (oddsNum >= 0 && (!longestShot || oddsNum > longestShot.oddsNum)) {
-            longestShot = {
-              name: g.name, odds: g.odds, oddsNum, strokerName: e.name, major,
-              points: scoreGolfer(g, scoreOpts).points, status: g.status,
-            };
+            longestShot = { name: g.name, odds: g.odds, oddsNum, strokerName: e.name, major, points, status: g.status };
           }
 
           const prec = strokerMap.get(g.name) || { count: 0, tier: g.tier, details: [] };
           prec.count += 1;
           prec.tier = g.tier;
-          prec.details.push({ major, entryNum: e.entryNum, odds: g.odds, tier: g.tier, points: scoreGolfer(g, scoreOpts).points, status: g.status });
+          prec.details.push({ major, entryNum: e.entryNum, odds: g.odds, tier: g.tier, points, status: g.status });
           strokerMap.set(g.name, prec);
+
+          const glog = golferPickLog.get(g.name) || [];
+          glog.push({ major, strokerName: e.name, entryNum: e.entryNum, odds: g.odds, tier: g.tier, points, status: g.status });
+          golferPickLog.set(g.name, glog);
         }
         if (strokerMap.size) strokerPickCounts.set(e.name, strokerMap);
       }
@@ -228,7 +232,7 @@ export default function History({ session, refreshAll }) {
       .sort((a, b) => b.sum - a.sum)
       .slice(0, 15);
 
-    return { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog, strokerPickCounts };
+    return { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog, strokerPickCounts, golferPickLog };
   }, [majors, allTournaments]);
 
   const sortedStrokers = useMemo(() => {
@@ -641,7 +645,8 @@ export default function History({ session, refreshAll }) {
         <div className="space-y-4">
           <div className="space-y-2">
             <div className="text-sm font-medium">Most picked golfers overall</div>
-            <GolferBars rows={golferRows} />
+            <GolferBars rows={golferRows} onSelect={(g) => setPickPieFor(g.name)} />
+            <p className="text-xs text-muted">Tap a golfer to break down who's been picking them.</p>
           </div>
 
           <div className="space-y-2">
@@ -673,7 +678,7 @@ export default function History({ session, refreshAll }) {
             <p className="text-xs text-muted">
               One stroker's own picking patterns — pick a name to see their most-drafted golfers across every major.
             </p>
-            <PickBreakdown strokerPickCounts={strokerPickCounts} />
+            <PickBreakdown strokerPickCounts={strokerPickCounts} strokerRows={strokerRows} />
           </div>
         </div>
       )}
@@ -714,6 +719,13 @@ export default function History({ session, refreshAll }) {
               value: `${d.points >= 0 ? '+' : ''}${d.points} pts`,
             }))}
           onClose={() => setGolferWinDetail(null)}
+        />
+      )}
+      {pickPieFor && (
+        <GolferPickPieModal
+          name={pickPieFor}
+          log={golferPickLog.get(pickPieFor) || []}
+          onClose={() => setPickPieFor(null)}
         />
       )}
     </div>
@@ -967,6 +979,7 @@ const SHORT_EVENT_LABEL = {
   us_open: 'US Open',
   pga: 'PGA Champ',
   open: 'Open Champ',
+  tour_championship: 'TOUR Champ',
 };
 
 // "2026 Open Championship" -> { label: "Open Champ", year: "2026" } —
@@ -1407,7 +1420,7 @@ function GolferBars({ rows, onSelect }) {
             <div className="flex-1 bg-border rounded h-2 overflow-hidden">
               <div className="bg-accent h-full rounded" style={{ width: `${(g.count / max) * 100}%` }} />
             </div>
-            <span className="w-6 text-right text-xs text-muted">{g.count}</span>
+            <span className="min-w-[2rem] text-right text-xs text-muted whitespace-nowrap">{g.label ?? g.count}</span>
           </Wrap>
         );
       })}
@@ -1420,42 +1433,220 @@ function GolferBars({ rows, onSelect }) {
 // details}> per stroker (strokerPickCounts, built in History's main
 // aggregation) sliced down to the top 10 for whoever's selected. Tapping a
 // golfer bar shows every major/entry that pick came from.
-function PickBreakdown({ strokerPickCounts }) {
+// Every stroker who's ever submitted an entry, name -> total entries (full-data
+// majors only) — the shared denominator for "picked in X% of entries" used by
+// both single and compare mode, and by the pool-average calculation.
+function strokerEntryMap(strokerRows) {
+  return new Map(strokerRows.filter((r) => r.entries > 0).map((r) => [r.name, r.entries]));
+}
+
+function PickBreakdown({ strokerPickCounts, strokerRows }) {
+  const [mode, setMode] = useState('single'); // 'single' | 'compare'
   const [selected, setSelected] = useState('');
+  const [compareSelected, setCompareSelected] = useState([]); // up to 4 stroker names
   const [detail, setDetail] = useState(null); // { name, tier, details } or null
+  const [compareDetail, setCompareDetail] = useState(null); // { title, subtitle, rows } or null
 
   const strokerNames = useMemo(
     () => [...strokerPickCounts.keys()].sort((a, b) => a.localeCompare(b)),
     [strokerPickCounts]
   );
+  const entriesByStroker = useMemo(() => strokerEntryMap(strokerRows), [strokerRows]);
+
+  // Total entries this stroker has submitted in full-data majors — the
+  // denominator for "picked in X% of entries," a better read on how
+  // committed a pick is than the raw count alone (10 picks means very
+  // different things at 12 entries vs. 60).
+  const totalEntries = entriesByStroker.get(selected) ?? null;
 
   const rows = useMemo(() => {
     if (!selected) return [];
     const map = strokerPickCounts.get(selected);
     if (!map) return [];
     return [...map.entries()]
-      .map(([name, r]) => ({ name, count: r.count, tier: r.tier, details: r.details }))
+      .map(([name, r]) => {
+        const pct = totalEntries ? Math.round((r.count / totalEntries) * 100) : null;
+        return {
+          name, count: r.count, tier: r.tier, details: r.details,
+          label: pct != null ? `${r.count} (${pct}%)` : r.count,
+        };
+      })
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
-  }, [strokerPickCounts, selected]);
+  }, [strokerPickCounts, selected, totalEntries]);
+
+  function toggleCompare(name) {
+    setCompareSelected((cur) => {
+      if (cur.includes(name)) return cur.filter((n) => n !== name);
+      if (cur.length >= 4) return cur;
+      return [...cur, name];
+    });
+  }
+
+  // Union of each selected stroker's own top-6 golfers, so nobody's favorite
+  // gets dropped just because another selected stroker doesn't share it.
+  // Each row gets one %-of-entries value per selected stroker plus a
+  // pool-wide "avg" value (mean %-of-entries across EVERY stroker with
+  // entries, not just the ones being compared — the whole-pool baseline).
+  const compareData = useMemo(() => {
+    if (!compareSelected.length) return [];
+    const golferTiers = new Map();
+    for (const strokerName of compareSelected) {
+      const map = strokerPickCounts.get(strokerName);
+      if (!map) continue;
+      const top = [...map.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 6);
+      for (const [gname, r] of top) golferTiers.set(gname, r.tier);
+    }
+    const pctFor = (strokerName, gname) => {
+      const entries = entriesByStroker.get(strokerName);
+      if (!entries) return 0;
+      const count = strokerPickCounts.get(strokerName)?.get(gname)?.count || 0;
+      return Math.round((count / entries) * 100);
+    };
+    const allStrokers = [...entriesByStroker.keys()];
+    return [...golferTiers.entries()]
+      .map(([gname, tier]) => {
+        const row = { name: gname, tier };
+        for (const strokerName of compareSelected) row[strokerName] = pctFor(strokerName, gname);
+        const avgSum = allStrokers.reduce((sum, s) => sum + pctFor(s, gname), 0);
+        row.avg = allStrokers.length ? Math.round(avgSum / allStrokers.length) : 0;
+        row._sortKey = compareSelected.reduce((s, n) => s + row[n], 0);
+        return row;
+      })
+      .sort((a, b) => b._sortKey - a._sortKey);
+  }, [compareSelected, strokerPickCounts, entriesByStroker]);
+
+  function openCompareStrokerDetail(strokerName, golferName) {
+    const rec = strokerPickCounts.get(strokerName)?.get(golferName);
+    if (!rec) return;
+    const entries = entriesByStroker.get(strokerName);
+    setCompareDetail({
+      title: (
+        <span className="flex items-center gap-1.5">
+          <TierDot tier={rec.tier} />{golferName}
+        </span>
+      ),
+      subtitle: `Picked by ${strokerName} · ${rec.details.length}×${entries ? ` · ${Math.round((rec.details.length / entries) * 100)}% of entries` : ''}`,
+      rows: [...rec.details]
+        .sort((a, b) => new Date(b.major.date) - new Date(a.major.date))
+        .map((d, i) => ({
+          key: i,
+          primary: d.major.name,
+          secondary: `Entry ${d.entryNum} · ${d.odds} odds · Tier ${d.tier}`,
+          value: `${d.points >= 0 ? '+' : ''}${d.points} pts`,
+          valueClass: d.points >= 0 ? 'text-accent' : 'text-danger',
+        })),
+    });
+  }
+
+  function openAvgDetail(golferName) {
+    const rowsOut = [...entriesByStroker.entries()]
+      .map(([strokerName, entries]) => {
+        const count = strokerPickCounts.get(strokerName)?.get(golferName)?.count || 0;
+        return { strokerName, count, pct: entries ? Math.round((count / entries) * 100) : 0 };
+      })
+      .filter((r) => r.count > 0)
+      .sort((a, b) => b.pct - a.pct)
+      .map((r, i) => ({
+        key: i, primary: r.strokerName, secondary: `${r.count} pick${r.count === 1 ? '' : 's'}`,
+        value: `${r.pct}%`, valueClass: 'text-muted',
+      }));
+    setCompareDetail({ title: `Pool average — ${golferName}`, subtitle: 'Every stroker who has picked them, by rate', rows: rowsOut });
+  }
 
   return (
     <>
-      <Select
-        value={selected}
-        onChange={setSelected}
-        options={[{ value: '', label: 'Choose a stroker…' }, ...strokerNames.map((n) => ({ value: n, label: n }))]}
-        className="w-full"
-      />
-      {selected && (
-        <GolferBars
-          rows={rows}
-          onSelect={(g) => setDetail({ name: g.name, tier: g.tier, details: g.details })}
-        />
+      <div className="flex gap-2">
+        <button
+          onClick={() => setMode('single')}
+          className={`text-xs px-2.5 py-1.5 rounded-lg border ${mode === 'single' ? 'border-accent text-text' : 'border-border text-muted'}`}
+        >
+          One stroker
+        </button>
+        <button
+          onClick={() => setMode('compare')}
+          className={`text-xs px-2.5 py-1.5 rounded-lg border ${mode === 'compare' ? 'border-accent text-text' : 'border-border text-muted'}`}
+        >
+          Compare strokers
+        </button>
+      </div>
+
+      {mode === 'single' && (
+        <>
+          <Select
+            value={selected}
+            onChange={setSelected}
+            options={[{ value: '', label: 'Choose a stroker…' }, ...strokerNames.map((n) => ({ value: n, label: n }))]}
+            className="w-full"
+          />
+          {selected && (
+            <>
+              <GolferBars
+                rows={rows}
+                onSelect={(g) => setDetail({ name: g.name, tier: g.tier, details: g.details })}
+              />
+              {totalEntries != null && (
+                <p className="text-xs text-muted">
+                  % = share of {selected}'s {totalEntries} entr{totalEntries === 1 ? 'y' : 'ies'} that included that golfer.
+                </p>
+              )}
+            </>
+          )}
+          {selected && !rows.length && (
+            <Card className="p-4 text-center text-muted text-sm">No full pick data for {selected} yet.</Card>
+          )}
+        </>
       )}
-      {selected && !rows.length && (
-        <Card className="p-4 text-center text-muted text-sm">No full pick data for {selected} yet.</Card>
+
+      {mode === 'compare' && (
+        <>
+          <div className="flex flex-wrap gap-1.5">
+            {strokerNames.map((n) => (
+              <button
+                key={n}
+                onClick={() => toggleCompare(n)}
+                disabled={!compareSelected.includes(n) && compareSelected.length >= 4}
+                className={`text-xs px-2.5 py-1 rounded-full border disabled:opacity-30 disabled:cursor-not-allowed ${compareSelected.includes(n) ? 'border-accent text-text bg-accent/10' : 'border-border text-muted'}`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted">Pick up to 4 strokers. Bars show % of that stroker's entries that included the golfer, alongside the pool-wide average.</p>
+
+          {compareSelected.length > 0 ? (
+            <Card className="p-4">
+              <div style={{ width: '100%', height: Math.max(260, compareData.length * 56) }}>
+                <ResponsiveContainer>
+                  <BarChart data={compareData} layout="vertical" margin={{ left: 8, right: 8 }}>
+                    <XAxis type="number" domain={[0, 100]} unit="%" stroke="#8B949E" fontSize={11} />
+                    <YAxis type="category" dataKey="name" width={110} stroke="#8B949E" fontSize={11} />
+                    <Tooltip
+                      contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
+                      labelStyle={{ color: '#E6EDF3' }}
+                      formatter={(value, key) => [`${value}%`, key === 'avg' ? 'Pool avg' : key]}
+                    />
+                    <Legend formatter={(key) => (key === 'avg' ? 'Pool avg' : key)} />
+                    {compareSelected.map((strokerName, i) => (
+                      <Bar
+                        key={strokerName}
+                        dataKey={strokerName}
+                        fill={PICK_PIE_COLORS[i % PICK_PIE_COLORS.length]}
+                        onClick={(data) => openCompareStrokerDetail(strokerName, data.name)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    ))}
+                    <Bar dataKey="avg" fill="#8B949E" onClick={(data) => openAvgDetail(data.name)} style={{ cursor: 'pointer' }} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          ) : (
+            <Card className="p-4 text-center text-muted text-sm">Pick at least one stroker to compare.</Card>
+          )}
+        </>
       )}
+
       {detail && (
         <RowsModal
           title={
@@ -1463,7 +1654,7 @@ function PickBreakdown({ strokerPickCounts }) {
               <TierDot tier={detail.tier} />{detail.name}
             </span>
           }
-          subtitle={`Picked by ${selected} · ${detail.details.length}×`}
+          subtitle={`Picked by ${selected} · ${detail.details.length}×${totalEntries ? ` · ${Math.round((detail.details.length / totalEntries) * 100)}% of entries` : ''}`}
           rows={[...detail.details]
             .sort((a, b) => new Date(b.major.date) - new Date(a.major.date))
             .map((d, i) => ({
@@ -1474,6 +1665,14 @@ function PickBreakdown({ strokerPickCounts }) {
               valueClass: d.points >= 0 ? 'text-accent' : 'text-danger',
             }))}
           onClose={() => setDetail(null)}
+        />
+      )}
+      {compareDetail && (
+        <RowsModal
+          title={compareDetail.title}
+          subtitle={compareDetail.subtitle}
+          rows={compareDetail.rows}
+          onClose={() => setCompareDetail(null)}
         />
       )}
     </>
@@ -1516,6 +1715,137 @@ function GolferScoreList({ rows }) {
 
 const MC_COLORS = ['#3FB950', '#D29922', '#F0883E', '#F85149'];
 const TIER_HEX = { 1: '#58A6FF', 2: '#D29922', 3: '#3FB950', 4: '#79C0FF', 5: '#7DC991', 6: '#D2D250' };
+const PICK_PIE_COLORS = ['#58A6FF', '#3FB950', '#D29922', '#F85149', '#79C0FF', '#7DC991', '#D2D250', '#F0883E', '#A371F7', '#DB61A2'];
+
+// "Most picked golfers overall" drill-down: this golfer's full pick log,
+// grouped by stroker / event type / year (toggle), with an optional
+// stroker filter that narrows the log before grouping — so you can ask
+// "how has Charles's picking of Scottie trended by year" as well as the
+// pool-wide view. Clicking a slice shows the underlying picks.
+function GolferPickPieModal({ name, log, onClose }) {
+  const [groupBy, setGroupBy] = useState('stroker'); // 'stroker' | 'eventType' | 'year'
+  const [strokerFilter, setStrokerFilter] = useState('');
+  const [sliceDetail, setSliceDetail] = useState(null); // { label, rows } or null
+
+  const strokerNames = useMemo(
+    () => [...new Set(log.map((p) => p.strokerName))].sort((a, b) => a.localeCompare(b)),
+    [log]
+  );
+
+  const filteredLog = useMemo(
+    () => (strokerFilter ? log.filter((p) => p.strokerName === strokerFilter) : log),
+    [log, strokerFilter]
+  );
+
+  const keyFor = (p) => {
+    if (groupBy === 'stroker') return p.strokerName;
+    if (groupBy === 'eventType') return eventTypeLabel(p.major.eventType);
+    return (p.major.date || '').slice(0, 4) || 'Unknown';
+  };
+
+  const { pieData, groups } = useMemo(() => {
+    const groups = new Map(); // label -> picks[]
+    for (const p of filteredLog) {
+      const key = keyFor(p);
+      const arr = groups.get(key) || [];
+      arr.push(p);
+      groups.set(key, arr);
+    }
+    const pieData = [...groups.entries()]
+      .map(([label, picks]) => ({ name: label, value: picks.length }))
+      .sort((a, b) => b.value - a.value);
+    return { pieData, groups };
+  }, [filteredLog, groupBy]);
+
+  function openSlice(label) {
+    const picks = groups.get(label) || [];
+    const rows = [...picks]
+      .sort((a, b) => new Date(b.major.date) - new Date(a.major.date))
+      .map((p, i) => ({
+        key: i,
+        primary: p.major.name,
+        secondary: `${p.strokerName} · Entry ${p.entryNum} · ${p.odds} odds · Tier ${p.tier}`,
+        value: `${p.points >= 0 ? '+' : ''}${p.points} pts`,
+        valueClass: p.points >= 0 ? 'text-accent' : 'text-danger',
+      }));
+    setSliceDetail({ label, rows });
+  }
+
+  const GROUP_LABELS = { stroker: 'By stroker', eventType: 'By event type', year: 'By year' };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
+        <div className="bg-card border border-border rounded-xl w-full max-w-md p-5 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-1">
+            <div className="font-medium">{name}</div>
+            <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
+          </div>
+          <div className="text-xs text-muted mb-3">
+            {filteredLog.length} pick{filteredLog.length === 1 ? '' : 's'}{strokerFilter ? ` by ${strokerFilter}` : ' total'}
+          </div>
+
+          <div className="flex gap-2 mb-3 flex-wrap">
+            {['stroker', 'eventType', 'year'].map((key) => (
+              <button
+                key={key}
+                onClick={() => setGroupBy(key)}
+                className={`text-xs px-2.5 py-1.5 rounded-lg border ${groupBy === key ? 'border-accent text-text' : 'border-border text-muted'}`}
+              >
+                {GROUP_LABELS[key]}
+              </button>
+            ))}
+          </div>
+
+          {groupBy !== 'stroker' && strokerNames.length > 1 && (
+            <Select
+              value={strokerFilter}
+              onChange={setStrokerFilter}
+              options={[{ value: '', label: 'All strokers' }, ...strokerNames.map((n) => ({ value: n, label: n }))]}
+              className="w-full mb-3"
+            />
+          )}
+
+          {pieData.length ? (
+            <div style={{ width: '100%', height: 240 }}>
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie
+                    data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85}
+                    label={(d) => `${d.name}: ${d.value}`}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(d) => openSlice(d.name)}
+                  >
+                    {pieData.map((d, i) => (
+                      <Cell key={d.name} fill={PICK_PIE_COLORS[i % PICK_PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
+                    labelStyle={{ color: '#E6EDF3' }}
+                    formatter={(value, n) => [`${value} pick${value === 1 ? '' : 's'}`, n]}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="text-sm text-muted text-center py-6">No picks for this filter.</div>
+          )}
+        </div>
+      </div>
+
+      {sliceDetail && (
+        <RowsModal
+          title={`${name} — ${sliceDetail.label}`}
+          subtitle={`${sliceDetail.rows.length} pick${sliceDetail.rows.length === 1 ? '' : 's'}`}
+          rows={sliceDetail.rows}
+          onClose={() => setSliceDetail(null)}
+        />
+      )}
+    </>
+  );
+}
 
 function FunStats({ fun, oneVOne, strokerRows, golferHistory, payoutMatrix, onOpenTrophy, onOpenPodium }) {
   const [modal, setModal] = useState(null); // { type: 'rows'|'namePicker'|'matches'|'majorSummary', ... } or null
