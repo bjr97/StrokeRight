@@ -105,6 +105,9 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
               <div className="text-[11px] uppercase tracking-wide text-muted mb-1">🏆 Defending champ</div>
               <div className="text-lg font-semibold">{activeDefendingChampions.join(' & ')}</div>
               <div className="text-xs text-muted mt-0.5">{activePriorMajors[0].name}</div>
+              {activePriorMajors[0].champion && (
+                <div className="text-xs text-muted mt-0.5">Champion: <span className="text-text">{activePriorMajors[0].champion}</span></div>
+              )}
             </Card>
           )}
           {lastHostedMajor && (
@@ -112,6 +115,9 @@ export default function Home({ tournament, golfers, entries, session, onNav }) {
               <div className="text-[11px] uppercase tracking-wide text-muted mb-1">🏆 Last winner</div>
               <div className="text-lg font-semibold">{lastHostedMajor.winner}</div>
               <div className="text-xs text-muted mt-0.5">{lastHostedMajor.name}</div>
+              {lastHostedMajor.champion && (
+                <div className="text-xs text-muted mt-0.5">Champion: <span className="text-text">{lastHostedMajor.champion}</span></div>
+              )}
             </Card>
           )}
         </div>
