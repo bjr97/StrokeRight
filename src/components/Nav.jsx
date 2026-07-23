@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const PRIMARY = [
   { id: 'home',        label: 'Home' },
@@ -15,6 +15,11 @@ const OVERFLOW = [
 
 export default function Nav({ page, onChange, session, onLogout, matchAlert }) {
   const [moreOpen, setMoreOpen] = useState(false);
+
+  // Close the flyout on any navigation, not just taps inside it — otherwise
+  // tapping a primary tab (Home/Submit/1v1/Board) while it's open leaves it
+  // rendered open underneath the newly-navigated page.
+  useEffect(() => { setMoreOpen(false); }, [page]);
 
   return (
     <>
