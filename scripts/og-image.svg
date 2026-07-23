@@ -1,0 +1,19 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#0D1117" />
+  <rect x="0" y="0" width="1200" height="8" fill="#3FB950" />
+
+  <!-- golf flag icon -->
+  <line x1="600" y1="182" x2="600" y2="270" stroke="#3FB950" stroke-width="6" stroke-linecap="round" />
+  <path d="M 600 182 L 662 204 L 600 226 Z" fill="#3FB950" />
+  <circle cx="600" cy="280" r="9" fill="#8B949E" />
+
+  <!-- wordmark -->
+  <text x="600" y="382" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="96">
+    <tspan fill="#E6EDF3">Stroke</tspan><tspan fill="#3FB950">Right</tspan>
+  </text>
+
+  <!-- tagline -->
+  <text x="600" y="440" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="500" font-size="36" fill="#8B949E">
+    Fantasy Golf Pool
+  </text>
+</svg>
