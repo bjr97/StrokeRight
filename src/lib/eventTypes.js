@@ -27,7 +27,7 @@ export const EVENT_TYPE_EMOJI = {
   open: '🏆',
   wm_open: '🗑️',
   players: '🏝️',
-  tour_championship: '🏁',
+  tour_championship: '💰',
 };
 
 export function eventTypeEmoji(value) {
