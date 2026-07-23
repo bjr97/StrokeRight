@@ -222,7 +222,7 @@ export default function History({ session, refreshAll }) {
     const golferRows = [...golferCounts.entries()]
       .map(([name, r]) => ({ name, count: r.count, tier: r.tier }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 15);
+      .slice(0, 50);
 
     const winningestGolfers = [...golferWinCounts.entries()]
       .map(([name, r]) => ({ name, count: r.count, tier: r.tier, details: r.details }))
@@ -852,8 +852,8 @@ export default function History({ session, refreshAll }) {
         <div className="space-y-4">
           <div className="space-y-2">
             <div className="text-sm font-medium">Most picked golfers overall</div>
-            <GolferBars rows={golferRows} onSelect={(g) => setPickPieFor(g.name)} />
-            <p className="text-xs text-muted">Tap a golfer to break down who's been picking them.</p>
+            <GolferBars rows={golferRows} onSelect={(g) => setPickPieFor(g.name)} maxHeight={446} />
+            <p className="text-xs text-muted">Top {golferRows.length} · tap a golfer to break down who's been picking them.</p>
           </div>
 
           <div className="space-y-2">
@@ -1643,10 +1643,10 @@ function MatchRowsModal({ title, matches, perspective, onClose, emptyText }) {
   );
 }
 
-function GolferBars({ rows, onSelect }) {
+function GolferBars({ rows, onSelect, maxHeight }) {
   const max = rows[0]?.count || 1;
-  return (
-    <Card className="p-4 space-y-2">
+  const list = (
+    <div className={maxHeight ? 'space-y-2 overflow-y-auto pr-1' : 'space-y-2'} style={maxHeight ? { maxHeight } : undefined}>
       {rows.map((g, i) => {
         const Wrap = onSelect ? 'button' : 'div';
         return (
@@ -1667,8 +1667,9 @@ function GolferBars({ rows, onSelect }) {
         );
       })}
       {!rows.length && <div className="text-muted text-sm">No full pick data yet.</div>}
-    </Card>
+    </div>
   );
+  return <Card className="p-4">{list}</Card>;
 }
 
 // One stroker's own most-drafted golfers — a Map<golferName, {count, tier,
