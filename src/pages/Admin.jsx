@@ -210,7 +210,7 @@ function CreateTournament({ refreshAll, onDone }) {
     <Card className="p-5 space-y-4">
       <div className="text-xs text-warn uppercase tracking-wide">Step 1 of 2</div>
       <Field label="Event type"><Select value={form.eventType} onChange={(v) => setForm({ ...form, eventType: v })} options={EVENT_TYPES} className="w-full" /></Field>
-      <Field label="Start date"><Input type="date" value={form.startDate} onChange={(v) => setForm({ ...form, startDate: v })} /></Field>
+      <Field label="Start date"><Input type="date" value={form.startDate} onChange={(v) => setForm({ ...form, startDate: v })} className="min-w-0 max-w-full" /></Field>
       <Field label="Picks deadline (auto: 11:59 PM the day before start)">
         <div className="px-3 py-2 bg-bg border border-border rounded-lg text-sm">
           {computedDeadline
@@ -480,8 +480,8 @@ function NextMajorCard({ refreshAll }) {
     <Card className="p-4 space-y-2">
       <div className="text-sm font-medium">Next major countdown (homepage)</div>
       <div className="flex gap-2">
-        <Select value={eventType} onChange={setEventType} options={EVENT_TYPES} className="flex-1" />
-        <Input type="datetime-local" value={deadline} onChange={setDeadline} className="flex-1" />
+        <Select value={eventType} onChange={setEventType} options={EVENT_TYPES} className="flex-1 min-w-0" />
+        <Input type="datetime-local" value={deadline} onChange={setDeadline} className="flex-1 min-w-0" />
       </div>
       <div className="flex gap-2">
         {nameLocked ? (
