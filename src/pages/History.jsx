@@ -233,7 +233,7 @@ export default function History({ session, refreshAll }) {
     const cumulativeScoreRows = [...golferScoreSum.entries()]
       .map(([name, r]) => ({ name, sum: r.sum, majorsCount: r.majorsCount, tier: r.tier }))
       .sort((a, b) => b.sum - a.sum)
-      .slice(0, 15);
+      .slice(0, 50);
 
     return { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog, strokerPickCounts, golferPickLog };
   }, [majors, allTournaments]);
@@ -869,9 +869,9 @@ export default function History({ session, refreshAll }) {
             <div className="text-sm font-medium">All-time cumulative score</div>
             <GolferScoreList rows={cumulativeScoreRows} />
             <p className="text-xs text-muted">
-              Each golfer's own fantasy points under our scoring rules (cut bonus/penalty, tiered penalty, winner
-              bonus), added once per event they were picked in — not multiplied by how many entries drafted them.
-              Higher is better.
+              Top {cumulativeScoreRows.length} · each golfer's own fantasy points under our scoring rules (cut
+              bonus/penalty, tiered penalty, winner bonus), added once per event they were picked in — not
+              multiplied by how many entries drafted them. Higher is better.
             </p>
           </div>
 
@@ -1911,9 +1911,10 @@ function PickBreakdown({ strokerPickCounts, strokerRows, session }) {
 
 function GolferScoreList({ rows }) {
   return (
-    <Card className="p-2 sm:p-3 overflow-x-auto">
+    <Card className="p-2 sm:p-3">
+      <div className="overflow-y-auto overflow-x-auto" style={{ maxHeight: 584 }}>
       <table className="w-full text-xs sm:text-sm">
-        <thead>
+        <thead className="sticky top-0 bg-card">
           <tr>
             <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-left pb-1.5 px-1.5">Golfer</th>
             <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Events</th>
@@ -1943,6 +1944,7 @@ function GolferScoreList({ rows }) {
           )}
         </tbody>
       </table>
+      </div>
     </Card>
   );
 }
