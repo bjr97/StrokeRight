@@ -1247,6 +1247,7 @@ function PayoutMatrixTable({ matrix }) {
     const valueFor = (row) => {
       if (sort.key === 'date') return new Date(row.major.date).getTime();
       if (sort.key === 'total') return row.total;
+      if (sort.key === 'entries') return row.major.entryCount ?? 0;
       return row.cells.get(sort.key)?.total || 0;
     };
     list.sort((a, b) => {
@@ -1287,7 +1288,10 @@ function PayoutMatrixTable({ matrix }) {
               >
                 Total
               </th>
-              <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap border-l border-border">
+              <th
+                onClick={() => toggleSort('entries')}
+                className={`text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap border-l border-border cursor-pointer select-none ${sort.key === 'entries' ? 'text-accent' : ''}`}
+              >
                 Entries
               </th>
             </tr>
