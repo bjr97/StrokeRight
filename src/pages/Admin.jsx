@@ -463,6 +463,8 @@ function TierManager({ tournament, golfers, refreshAll }) {
   const [bulkText, setBulkText] = useState('');
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState('');
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState('');
 
   const liveOddsSportKey = LIVE_ODDS_SPORT_KEYS[tournament.eventType];
 
@@ -473,14 +475,28 @@ function TierManager({ tournament, golfers, refreshAll }) {
     setDraft(autoTierByOdds(withIds));
   }
 
-  function importBulk() {
-    // Format: "Player Name, +450" per line
-    const lines = bulkText.split('\n').map((l) => l.trim()).filter(Boolean);
-    const list = lines.map((line) => {
-      const [name, odds] = line.split(',').map((s) => s.trim());
-      return { name, odds };
-    });
-    importList(list);
+  // Whatever gets pasted — a clean list, a jumbled multi-column table copied
+  // straight off a sportsbook page, rankings interleaved with names — goes
+  // through AI parsing rather than a strict "Name, +odds per line" format.
+  async function importBulk() {
+    if (!bulkText.trim()) return;
+    setParsing(true);
+    setParseError('');
+    try {
+      const res = await fetch('/api/parse-odds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: bulkText }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      if (!data.golfers?.length) throw new Error('No golfers found in that text.');
+      importList(data.golfers);
+    } catch (err) {
+      setParseError(String(err.message || err));
+    } finally {
+      setParsing(false);
+    }
   }
 
   async function fetchLiveOdds() {
@@ -530,15 +546,19 @@ function TierManager({ tournament, golfers, refreshAll }) {
           )}
           <Card className="p-4 space-y-3">
             <div className="text-sm">
-              {liveOddsSportKey ? 'Or paste the field manually' : 'Paste the field'} — one golfer per line, `Name, +odds`:
+              {liveOddsSportKey ? 'Or paste the field' : 'Paste the field'} — copy the odds board straight from wherever
+              you found it, any format. AI sorts out the names and odds.
             </div>
             <textarea
               className="w-full h-40 bg-bg border border-border rounded-lg p-3 font-mono text-sm"
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
-              placeholder={`Scottie Scheffler, +450\nRory McIlroy, +600\n...`}
+              placeholder={`Paste anything — a clean list, a messy multi-column table copied off a sportsbook page, whatever you've got.`}
             />
-            <Button onClick={importBulk}>Import + auto-tier</Button>
+            <Button onClick={importBulk} disabled={parsing || !bulkText.trim()}>
+              {parsing ? 'Parsing…' : 'Import + auto-tier'}
+            </Button>
+            {parseError && <div className="text-xs text-danger">{parseError}</div>}
           </Card>
         </>
       )}
