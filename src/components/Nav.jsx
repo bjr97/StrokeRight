@@ -1,20 +1,26 @@
 import React, { useState, useEffect } from 'react';
 
-const PRIMARY = [
-  { id: 'home',        label: 'Home' },
-  { id: 'submit',      label: 'Submit' },
-  { id: 'matches',     label: '1v1' },
-  { id: 'leaderboard', label: 'Board' },
+const PRIMARY_BASE = [
+  { id: 'home',    label: 'Home' },
+  { id: 'submit',  label: 'Submit' },
+  { id: 'matches', label: '1v1' },
 ];
-const OVERFLOW = [
+const BOARD = { id: 'leaderboard', label: 'Board' };
+const HISTORY = { id: 'history', label: 'History' };
+const OVERFLOW_BASE = [
   { id: 'players',  label: 'Players' },
   { id: 'analysis', label: 'Analysis' },
-  { id: 'history',  label: 'History' },
-  { id: 'rules',    label: 'Rules' },
 ];
+const RULES = { id: 'rules', label: 'Rules' };
 
-export default function Nav({ page, onChange, session, onLogout, matchAlert }) {
+export default function Nav({ page, onChange, session, onLogout, matchAlert, tournamentLive }) {
   const [moreOpen, setMoreOpen] = useState(false);
+
+  // Board only matters while an event is actually live — the rest of the
+  // time History is the more useful 4th primary tab, and Board just waits
+  // in More until the next tournament goes live.
+  const PRIMARY = [...PRIMARY_BASE, tournamentLive ? BOARD : HISTORY];
+  const OVERFLOW = [...OVERFLOW_BASE, tournamentLive ? HISTORY : BOARD, RULES];
 
   // Close the flyout on any navigation, not just taps inside it — otherwise
   // tapping a primary tab (Home/Submit/1v1/Board) while it's open leaves it

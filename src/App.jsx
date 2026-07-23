@@ -189,7 +189,7 @@ export default function App() {
 
   return (
     <div className="min-h-dvh">
-      <Nav page={page} onChange={setPage} session={session} onLogout={handleLogout} matchAlert={matchAlert} />
+      <Nav page={page} onChange={setPage} session={session} onLogout={handleLogout} matchAlert={matchAlert} tournamentLive={tournament?.status === 'live'} />
 
       <main className="pb-20 md:pb-0">
         {page === 'home' && <Home tournament={tournament} golfers={golfers} entries={entries} session={session} onNav={navigateTo} />}
