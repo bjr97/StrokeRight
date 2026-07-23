@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { storage, keys, listTournaments, setActiveTournamentId, getActiveTournamentId } from '../lib/storage.js';
 import { seedDemoMasters } from '../lib/seedData.js';
 import { finalStandings } from '../lib/scoring.js';
 import { buildMajors, getStrokerWins, getDefendingChampions } from '../lib/majors.js';
+import { resolveProjectedCutLine } from '../lib/cutProjection.js';
 import { fmtMoney } from '../lib/payouts.js';
 import { Card, Button, Input, Select, Pill, TierDot, TIER_COLORS, fmtToPar, confirmAsync, alertAsync } from '../components/ui.jsx';
 import { EVENT_TYPES, autoTournamentName, fixedCourse, eventTypeLabel, eventTypeEmoji } from '../lib/eventTypes.js';
@@ -177,6 +178,7 @@ function CreateTournament({ refreshAll, onDone }) {
       entryFee: 10,
       tieredPenaltyEnabled: form.tieredPenaltyEnabled,
       cutLine: null,
+      projectedCutLine: null,
       currentRound: 1,
       status: 'setup',
       tierLabels: ['Dark blue', 'Orange', 'Dark green', 'Light blue', 'Light green', 'Yellow'],
@@ -657,7 +659,13 @@ function requestFinalRecap({ tournament, fs, winnerNames }) {
 function LiveControls({ tournament, golfers, refreshAll }) {
   const [round, setRound] = useState(tournament.currentRound);
   const [cutLine, setCutLine] = useState(tournament.cutLine ?? '');
+  const [projectedCutLine, setProjectedCutLine] = useState(tournament.projectedCutLine ?? '');
   const entries = storage.get(keys.entries(tournament.id)) || [];
+
+  const liveProjection = useMemo(
+    () => resolveProjectedCutLine({ ...tournament, projectedCutLine: null }, golfers),
+    [tournament, golfers]
+  );
 
   // These start from the tournament prop but only capture it once (useState
   // initializers only run on mount). Re-sync whenever the underlying data
@@ -668,7 +676,8 @@ function LiveControls({ tournament, golfers, refreshAll }) {
   useEffect(() => {
     setRound(tournament.currentRound);
     setCutLine(tournament.cutLine ?? '');
-  }, [tournament.id, tournament.currentRound, tournament.cutLine]);
+    setProjectedCutLine(tournament.projectedCutLine ?? '');
+  }, [tournament.id, tournament.currentRound, tournament.cutLine, tournament.projectedCutLine]);
 
   async function completeTournament() {
     if (!entries.length) return alertAsync('No entries yet — nothing to finalize.');
@@ -730,6 +739,7 @@ function LiveControls({ tournament, golfers, refreshAll }) {
       ...tournament,
       currentRound: Number(round),
       cutLine: cutLine === '' ? null : Number(cutLine),
+      projectedCutLine: projectedCutLine === '' ? null : Number(projectedCutLine),
     });
     refreshAll();
   }
@@ -778,6 +788,13 @@ function LiveControls({ tournament, golfers, refreshAll }) {
       <Card className="p-4 space-y-3">
         <Field label="Current round (1–4)"><Input type="number" value={round} onChange={setRound} /></Field>
         <Field label="Cut line (over par). Leave blank to auto-detect."><Input type="number" value={cutLine} onChange={setCutLine} placeholder="6" /></Field>
+        {cutLine === '' && (
+          <Field
+            label={`Projected cut line (over par), rounds 1–2 only. Leave blank to use the live projection${liveProjection != null ? ` (currently ${fmtToPar(liveProjection)})` : ' (not enough live data yet)'}.`}
+          >
+            <Input type="number" value={projectedCutLine} onChange={setProjectedCutLine} placeholder={liveProjection != null ? String(liveProjection) : 'e.g. 2'} />
+          </Field>
+        )}
         <Button onClick={save}>Save</Button>
       </Card>
 

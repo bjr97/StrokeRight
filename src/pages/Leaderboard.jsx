@@ -5,6 +5,7 @@ import { computePayouts, fmtMoney } from '../lib/payouts.js';
 import { computeWinProbabilities } from '../lib/winProb.js';
 import { getDefendingChampions, getStrokerWins, trophyCaseEmojis } from '../lib/majors.js';
 import { picksRevealed, deadlineLabel } from '../lib/gating.js';
+import { resolveProjectedCutLine } from '../lib/cutProjection.js';
 import { Card, Stat, Pill, StatusBadge, TierDot, fmtToPar, Input, TrophyCase, TrophyCaseModal } from '../components/ui.jsx';
 
 // Human-readable labels for each breakdown line item.
@@ -96,6 +97,13 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
 
   const { payouts, structure } = computePayouts(ranked, entries.length, tournament.entryFee);
 
+  // Live-projected cut line (rounds 1-2, before the real cut is set) — see
+  // lib/cutProjection.js. Null once the actual tournament.cutLine is set.
+  const projectedCutLine = useMemo(
+    () => resolveProjectedCutLine(tournament, golfers),
+    [tournament, golfers]
+  );
+
   // Position change since last snapshot
   const prevRanks = useMemo(() => {
     const lastSnap = (snapshots || []).filter((s) => s.round === (tournament.currentRound - 1));
@@ -143,6 +151,16 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
           <div className="text-xs text-muted mt-1">
             Other entries become visible at {deadlineLabel(tournament) || 'the deadline'}. You can see who's submitted, but not their golfers.
           </div>
+        </Card>
+      )}
+
+      {projectedCutLine != null && (
+        <Card className="p-3 flex items-center justify-between">
+          <div className="text-sm">
+            <span className="text-muted">Projected cut line: </span>
+            <span className="font-medium">{fmtToPar(projectedCutLine)}</span>
+          </div>
+          <div className="text-xs text-muted">Live projection · not final</div>
         </Card>
       )}
 
@@ -221,7 +239,11 @@ export default function Leaderboard({ tournament, golfers, entries, snapshots, s
                         <TierDot tier={s.golfer.tier} />
                         <span>{s.golfer.name}</span>
                         <span className="text-muted text-xs tabular-nums">{fmtToPar(s.golfer.strokesToPar)}</span>
-                        <StatusBadge status={s.golfer.status} won={s.golfer.won} />
+                        <StatusBadge
+                          status={s.golfer.status}
+                          won={s.golfer.won}
+                          projectedMissCut={projectedCutLine != null && (s.golfer.strokesToPar ?? 0) > projectedCutLine}
+                        />
                       </span>
                       <button
                         onClick={(e) => {

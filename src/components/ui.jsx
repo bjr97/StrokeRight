@@ -99,8 +99,9 @@ export function fmtToPar(n) {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
-export function StatusBadge({ status, won }) {
+export function StatusBadge({ status, won, projectedMissCut }) {
   if (won) return <Pill color="gold">🏆 Champion</Pill>;
+  if (status === 'playing' && projectedMissCut) return <Pill color="red">⚠ Proj. MC</Pill>;
   switch (status) {
     case 'made_cut':   return <Pill color="green">Made cut</Pill>;
     case 'missed_cut': return <Pill color="red">MC</Pill>;

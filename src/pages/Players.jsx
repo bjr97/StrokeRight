@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { rankEntries, scoreGolfer } from '../lib/scoring.js';
 import { picksRevealed, deadlineLabel } from '../lib/gating.js';
+import { resolveProjectedCutLine } from '../lib/cutProjection.js';
 import { Card, TierDot, StatusBadge, fmtToPar, Input } from '../components/ui.jsx';
 
 export default function Players({ tournament, golfers, entries, onNavToLeaderboard, session }) {
@@ -38,6 +39,11 @@ export default function Players({ tournament, golfers, entries, onNavToLeaderboa
     return { active, below };
   }, [golfers]);
 
+  const projectedCutLine = useMemo(
+    () => resolveProjectedCutLine(tournament, golfers),
+    [tournament, golfers]
+  );
+
   const totalEntries = Math.max(1, entries.length);
   const ranked = useMemo(() => rankEntries(entries, golfers, opts), [entries, golfers, tournament]);
   const entryRankLookup = useMemo(
@@ -71,7 +77,11 @@ export default function Players({ tournament, golfers, entries, onNavToLeaderboa
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <StatusBadge status={g.status} won={g.won} />
+                <StatusBadge
+                  status={g.status}
+                  won={g.won}
+                  projectedMissCut={projectedCutLine != null && (g.strokesToPar ?? 0) > projectedCutLine}
+                />
                 <div className="text-right">
                   <div className={`text-sm font-semibold tabular-nums ${(g.strokesToPar ?? 0) <= 0 ? 'text-accent' : 'text-text'}`}>
                     {fmtToPar(g.strokesToPar)}
@@ -128,6 +138,11 @@ export default function Players({ tournament, golfers, entries, onNavToLeaderboa
 
       {tournament.cutLine != null && tournament.currentRound > 2 && (
         <div className="text-xs text-muted">Cut line: {fmtToPar(tournament.cutLine)}</div>
+      )}
+      {projectedCutLine != null && (
+        <div className="text-xs text-muted">
+          Projected cut line: <span className="text-text">{fmtToPar(projectedCutLine)}</span> · live projection, not final
+        </div>
       )}
 
       <div className="space-y-1.5">{rowsFor(sorted.active)}</div>
