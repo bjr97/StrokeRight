@@ -409,6 +409,7 @@ function MatchCard({ match, golfers, tournament, myName, deadlinePassed, onAccep
 function DraftRoomModal({ match, golfers, iAmChallenger, iAmOpponent, complete, onPick, onClose }) {
   const mySide = iAmChallenger ? match.challengerPicks : match.opponentPicks;
   const theirSide = iAmChallenger ? match.opponentPicks : match.challengerPicks;
+  const theirName = (iAmChallenger ? match.opponentName : match.challengerName) || 'Opponent';
 
   let turn = null, myTurn = false, available = [];
   if (!complete) {
@@ -417,11 +418,15 @@ function DraftRoomModal({ match, golfers, iAmChallenger, iAmOpponent, complete, 
     const taken = takenGolferIds(match);
     available = [...golfers].filter((g) => !taken.has(g.id)).sort((a, b) => oddsRank(a.odds) - oddsRank(b.odds));
   }
+  // Defaults open on your turn (so the pickable list still needs no extra
+  // tap), closed while waiting — but always reachable either way, which is
+  // the whole point: you couldn't see the remaining pool at all before.
+  const [showAvailable, setShowAvailable] = useState(myTurn);
   const madeSoFar = mySide.length + theirSide.length;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-md p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div className="font-medium">{complete ? 'Final picks' : 'Draft Room'}</div>
           <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
@@ -431,32 +436,67 @@ function DraftRoomModal({ match, golfers, iAmChallenger, iAmOpponent, complete, 
             Draft in progress — pick {madeSoFar + 1} of 12{mySide.length === 5 ? ' (your next pick is the extra/alternate)' : ''}
           </div>
         )}
-        <PickList label="Your picks" picks={mySide} golfers={golfers} />
-        <PickList label="Their picks" picks={theirSide} golfers={golfers} />
+        <div className="grid grid-cols-2 gap-3">
+          <PickColumn label="You" picks={mySide} golfers={golfers} />
+          <PickColumn label={theirName} picks={theirSide} golfers={golfers} />
+        </div>
         {!complete && (
-          myTurn ? (
+          <>
+            <div className={`text-xs ${myTurn ? 'text-accent font-medium' : 'text-accent animate-pulse'}`}>
+              {myTurn ? 'Your turn!' : `Waiting for ${turn === 'challenger' ? match.challengerName : match.opponentName}'s pick.`}
+            </div>
             <div>
-              <div className="text-xs font-medium mb-1">Your turn:</div>
-              <div className="max-h-64 overflow-y-auto space-y-1">
-                {available.map((g) => (
-                  <button
-                    key={g.id}
-                    onClick={() => onPick(g.id)}
-                    className="w-full flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-bg"
-                  >
-                    <span>{g.name}</span>
-                    <span className="text-muted tabular-nums">{g.odds}</span>
-                  </button>
-                ))}
-              </div>
+              <button
+                onClick={() => setShowAvailable((v) => !v)}
+                className="text-xs font-medium text-muted hover:text-text flex items-center gap-1"
+              >
+                <span>{showAvailable ? '▾' : '▸'}</span> Available golfers ({available.length})
+              </button>
+              {showAvailable && (
+                <div className="max-h-64 overflow-y-auto space-y-1 mt-1.5">
+                  {available.map((g) => (
+                    myTurn ? (
+                      <button
+                        key={g.id}
+                        onClick={() => onPick(g.id)}
+                        className="w-full flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-bg"
+                      >
+                        <span>{g.name}</span>
+                        <span className="text-muted tabular-nums">{g.odds}</span>
+                      </button>
+                    ) : (
+                      <div key={g.id} className="w-full flex items-center justify-between text-sm py-1.5 px-2 text-muted">
+                        <span>{g.name}</span>
+                        <span className="tabular-nums">{g.odds}</span>
+                      </div>
+                    )
+                  ))}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="text-xs text-accent animate-pulse">
-              Waiting for {turn === 'challenger' ? match.challengerName : match.opponentName}'s pick.
-            </div>
-          )
+          </>
         )}
       </div>
+    </div>
+  );
+}
+
+function PickColumn({ label, picks, golfers }) {
+  const lookup = new Map(golfers.map((g) => [g.id, g]));
+  return (
+    <div className="min-w-0">
+      <div className="text-xs font-medium mb-1 truncate">{label}</div>
+      {!picks.length ? (
+        <div className="text-xs text-muted">No picks yet</div>
+      ) : (
+        <div className="space-y-0.5">
+          {picks.map((id, i) => (
+            <div key={id} className="text-xs truncate">
+              {lookup.get(id)?.name || '?'}{i === 5 && <span className="text-muted"> (extra)</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -504,16 +544,6 @@ function MatchSideBreakdown({ label, name, side, highlight }) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function PickList({ label, picks, golfers }) {
-  const lookup = new Map(golfers.map((g) => [g.id, g]));
-  if (!picks.length) return <div className="text-xs text-muted">{label}: none yet</div>;
-  return (
-    <div className="text-xs text-muted">
-      {label}: {picks.map((id, i) => (i === 5 ? `(${lookup.get(id)?.name || '?'} extra)` : lookup.get(id)?.name || '?')).join(', ')}
     </div>
   );
 }
