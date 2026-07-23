@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { storage, keys, listTournaments, setActiveTournamentId, getActiveTournamentId } from '../lib/storage.js';
 import { seedDemoMasters } from '../lib/seedData.js';
 import { finalStandings } from '../lib/scoring.js';
-import { buildMajors, getStrokerWins, getDefendingChampions } from '../lib/majors.js';
+import { buildMajors, buildRecapStoryContext, groupSummaryPayouts } from '../lib/majors.js';
 import { resolveProjectedCutLine } from '../lib/cutProjection.js';
 import { fmtMoney } from '../lib/payouts.js';
 import { Card, Button, Input, Select, Pill, TierDot, TIER_COLORS, fmtToPar, confirmAsync, alertAsync } from '../components/ui.jsx';
@@ -636,27 +636,11 @@ function TierManager({ tournament, golfers, refreshAll }) {
 function requestFinalRecap({ tournament, fs, winnerNames }) {
   try {
     const priorMajors = buildMajors(); // doesn't include this tournament's history row yet
-    const strokerWins = getStrokerWins();
     const winnerList = winnerNames.split(' & ').map((s) => s.trim()).filter(Boolean);
-
-    const storyContext = [];
-    for (const w of winnerList) {
-      const priorWinCount = (strokerWins.get(w) || []).length;
-      if (priorWinCount > 0) {
-        storyContext.push(`${w} has won ${priorWinCount} major${priorWinCount === 1 ? '' : 's'} before this one.`);
-      }
-    }
-    const lastMajor = [...priorMajors].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-    if (lastMajor?.winner) {
-      const lastWinners = lastMajor.winner.split(' & ').map((s) => s.trim());
-      const repeat = winnerList.find((w) => lastWinners.includes(w));
-      if (repeat) storyContext.push(`${repeat} also won the last major played (${lastMajor.name}) — that's back-to-back.`);
-    }
-    const defenders = getDefendingChampions({ eventType: tournament.eventType, anchorDate: tournament.startDate }, priorMajors);
-    if (defenders.length) {
-      const repeated = winnerList.some((w) => defenders.includes(w));
-      storyContext.push(`Defending ${eventTypeLabel(tournament.eventType)} champion: ${defenders.join(' & ')}.${repeated ? ' They just defended their title!' : ''}`);
-    }
+    const storyContext = buildRecapStoryContext(
+      { eventType: tournament.eventType, date: tournament.startDate, winnerList },
+      priorMajors
+    );
 
     const winningTeam = (fs.winners[0]?.scored || []).map((s) => ({ name: s.golfer.name, points: s.points }));
 
@@ -685,6 +669,49 @@ function requestFinalRecap({ tournament, fs, winnerNames }) {
   } catch (err) {
     console.error('[recap] building recap context failed:', err);
   }
+}
+
+// Same idea as requestFinalRecap, but for a summary-only major — a
+// payout-only backfill with no tournaments/entries/golfers rows at all
+// (the event was never run through the app), so there's no `fs`/team/points
+// to draw on. Every other paid place from the backfill gets folded into
+// storyContext as a plain fact, since there's no runnerUp points diff to
+// compute without a real score.
+function requestSummaryRecap(major) {
+  const priorMajors = buildMajors().filter((m) => m.id !== major.id);
+  const winnerList = (major.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
+  const storyContext = buildRecapStoryContext(
+    { eventType: major.eventType, date: major.date, winnerList },
+    priorMajors
+  );
+  if (major.summaryPayouts?.length) {
+    const groups = groupSummaryPayouts(major.summaryPayouts);
+    const winnerPlace = groups[0]?.place;
+    for (const g of groups) {
+      if (g.place === winnerPlace) continue;
+      for (const p of g.entries) {
+        storyContext.push(`${p.name} finished ${g.rankLabel} and won $${p.prize}.`);
+      }
+    }
+  }
+
+  return fetch('/api/generate-recap', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      tournamentId: major.id,
+      tournamentName: major.name,
+      eventTypeLabel: eventTypeLabel(major.eventType),
+      course: null,
+      winnerNames: major.winner,
+      team: [],
+      totalPoints: major.points ?? null,
+      prize: major.prize,
+      entryCount: major.entryCount ?? null,
+      storyContext,
+      runnerUp: null,
+    }),
+  });
 }
 
 function LiveControls({ tournament, golfers, refreshAll }) {

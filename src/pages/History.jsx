@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts';
 import { storage, keys, listTournaments } from '../lib/storage.js';
-import { buildMajors, getStrokerWins, trophyCaseEmojis, formatRank, getStrokerRows, groupSummaryPayouts } from '../lib/majors.js';
+import { buildMajors, getStrokerWins, trophyCaseEmojis, formatRank, getStrokerRows, groupSummaryPayouts, buildRecapStoryContext } from '../lib/majors.js';
 import { buildMatchLeaderboard, highRoller, untouchable, biggestRivalry, getPlayerMatches } from '../lib/matchStats.js';
 import { scoreGolfer } from '../lib/scoring.js';
 import { fmtMoney as fm } from '../lib/payouts.js';
@@ -562,6 +562,60 @@ export default function History({ session, refreshAll }) {
     refreshAll();
   }
 
+  // For summary-only majors (payout-only backfills with no
+  // tournaments/entries/golfers rows at all) — there's no finalStandings()
+  // to draw on, so this builds the same storyContext by hand from just the
+  // winner/date/event type/other paid places already on the record.
+  async function generateSummaryRecap(m) {
+    const label = m.recap ? 'Regenerate' : 'Generate';
+    const ok = await confirmAsync(
+      `${label} the AI recap for "${m.name}"?${m.recap ? ' This overwrites the existing recap text.' : ''}`,
+      { confirmLabel: label }
+    );
+    if (!ok) return;
+
+    const priorMajors = allMajors.filter((x) => x.id !== m.id);
+    const winnerList = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
+    const storyContext = buildRecapStoryContext(
+      { eventType: m.eventType, date: m.date, winnerList },
+      priorMajors
+    );
+    if (m.summaryPayouts?.length) {
+      const groups = groupSummaryPayouts(m.summaryPayouts);
+      const winnerPlace = groups[0]?.place;
+      for (const g of groups) {
+        if (g.place === winnerPlace) continue;
+        for (const p of g.entries) storyContext.push(`${p.name} finished ${g.rankLabel} and won $${p.prize}.`);
+      }
+    }
+
+    try {
+      const res = await fetch('/api/generate-recap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tournamentId: m.id,
+          tournamentName: m.name,
+          eventTypeLabel: eventTypeLabel(m.eventType),
+          course: null,
+          winnerNames: m.winner,
+          team: [],
+          totalPoints: m.points ?? null,
+          prize: m.prize,
+          entryCount: m.entryCount ?? null,
+          storyContext,
+          runnerUp: null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      await alertAsync('Recap generated. Refresh to see it below the major.');
+      refreshAll();
+    } catch (err) {
+      await alertAsync(`Recap generation failed: ${String(err.message || err)}`);
+    }
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-32 md:pb-6 space-y-4">
       <div>
@@ -625,6 +679,7 @@ export default function History({ session, refreshAll }) {
                 expanded={expandedId === m.id}
                 onToggleExpand={() => setExpandedId(expandedId === m.id ? null : m.id)}
                 isAdmin={session?.isAdmin}
+                onGenerateRecap={() => generateSummaryRecap(m)}
                 onEdit={() => {
                   const idx = history.findIndex((h) => h.id === m.id);
                   setEditing({ idx, draft: history[idx] });
@@ -864,7 +919,7 @@ function PodiumFinishesModal({ name, finishes, title, emptyText, onClose }) {
   );
 }
 
-function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
+function MajorCard({ m, expanded, onToggleExpand, isAdmin, onGenerateRecap, onEdit, onDelete }) {
   const [expandedEntryId, setExpandedEntryId] = useState(null);
   const [recapOpen, setRecapOpen] = useState(true);
   return (
@@ -942,6 +997,7 @@ function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
 
       {!m.fullData && isAdmin && (
         <div className="mt-2 flex gap-2 justify-end">
+          <button onClick={onGenerateRecap} className="text-xs text-accent">{m.recap ? 'regenerate recap' : 'generate recap'}</button>
           <button onClick={onEdit} className="text-xs text-muted hover:text-text">edit</button>
           <button onClick={onDelete} className="text-xs text-danger">del</button>
         </div>

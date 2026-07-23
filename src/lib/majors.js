@@ -1,7 +1,7 @@
 import { storage, keys, listTournaments } from './storage.js';
 import { finalStandings } from './scoring.js';
 import { oddsToNum } from './odds.js';
-import { eventTypeEmoji } from './eventTypes.js';
+import { eventTypeEmoji, eventTypeLabel } from './eventTypes.js';
 
 const LONGSHOT_THRESHOLD = 8000;        // a single pick this long (or longer) is notable on its own
 const UNDERDOG_TEAM_AVG_THRESHOLD = 9000; // whole-team average odds this long counts as "underdogs"
@@ -399,6 +399,62 @@ export function getStrokerWins() {
     }
   }
   return wins;
+}
+
+// Builds the fact list a recap prompt is allowed to state — shared by both
+// full-data and summary-only recap requests so the two paths can't drift
+// apart on what counts as "back-to-back," a real win total, or a Grand Slam.
+// Each line is a hard fact, not a suggestion — the prompt itself also tells
+// the model not to invent anything beyond this list, since past runs showed
+// the model will happily hallucinate a plausible-sounding streak or win
+// count if you only ever tell it the positive cases and let it guess the rest.
+//
+// `eventType`/`date`/`winnerList` describe the major just played (not yet in
+// buildMajors()'s output). `priorMajors` is buildMajors() from BEFORE this
+// one was added, so "the most recent prior major" and win counts are exactly
+// what they'd have been going into this event.
+export function buildRecapStoryContext({ eventType, date, winnerList }, priorMajors) {
+  const storyContext = [];
+  const strokerWins = getStrokerWins(); // already reflects everything in priorMajors
+
+  for (const w of winnerList) {
+    const priorWins = strokerWins.get(w) || [];
+    const totalWins = priorWins.length + 1; // +1 for the win being recapped
+    storyContext.push(`This is ${w}'s ${ordinalSuffix(totalWins)} major win overall (including this one) — state this exact number if you mention a win total, don't estimate.`);
+
+    if (eventType && GRAND_SLAM_TYPES.includes(eventType)) {
+      const priorTypes = new Set(priorWins.filter((pw) => GRAND_SLAM_TYPES.includes(pw.eventType)).map((pw) => pw.eventType));
+      const newTypes = new Set(priorTypes);
+      newTypes.add(eventType);
+      if (newTypes.size === GRAND_SLAM_TYPES.length && priorTypes.size === GRAND_SLAM_TYPES.length - 1) {
+        storyContext.push(`HEADLINE STORY: ${w} just completed the career Grand Slam with this win — they have now won all four majors (Masters, US Open, PGA Championship, Open Championship) at some point. Lead with this.`);
+      } else if (newTypes.size > priorTypes.size) {
+        storyContext.push(`This is ${w}'s first-ever ${eventTypeLabel(eventType)} win. They've now won ${newTypes.size} of the 4 major types needed for the career Grand Slam.`);
+      }
+    }
+  }
+
+  const priorSorted = priorMajors
+    .filter((m) => m.date && new Date(m.date) < new Date(date))
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  const lastMajor = priorSorted[0];
+  if (lastMajor?.winner) {
+    const lastWinners = lastMajor.winner.split(' & ').map((s) => s.trim());
+    const repeat = winnerList.find((w) => lastWinners.includes(w));
+    if (repeat) {
+      storyContext.push(`${repeat} also won the last major played (${lastMajor.name}) — that IS back-to-back, you can say so.`);
+    } else {
+      storyContext.push(`The last major played before this one was ${lastMajor.name}, won by ${lastMajor.winner} — a DIFFERENT person/team. This is NOT a back-to-back win for ${winnerList.join(' & ')}; do not call it one.`);
+    }
+  }
+
+  const defenders = getDefendingChampions({ eventType, anchorDate: date }, priorMajors);
+  if (defenders.length) {
+    const repeated = winnerList.some((w) => defenders.includes(w));
+    storyContext.push(`Defending ${eventTypeLabel(eventType)} champion: ${defenders.join(' & ')}.${repeated ? ' They just defended their title!' : ''}`);
+  }
+
+  return storyContext;
 }
 
 // "2nd", "T3", etc. — prefixes a T when someone else shares that rank in the
