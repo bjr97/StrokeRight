@@ -815,12 +815,21 @@ function StrokerTable({ rows, sort, onSort, strokerWins, onOpenTrophy, onOpenPod
   );
 }
 
-// "2026 Open Championship" -> { label: "Open Championship", year: "2026" } —
+// Short labels for this table only (it's tight on width) — everywhere else
+// in the app still uses the full event-type label.
+const SHORT_EVENT_LABEL = {
+  masters: 'Masters',
+  us_open: 'US Open',
+  pga: 'PGA Champ',
+  open: 'Open Champ',
+};
+
+// "2026 Open Championship" -> { label: "Open Champ", year: "2026" } —
 // splitting these onto two lines keeps the sticky first column narrow, which
 // is the whole point (frees up width for more stroker columns to show).
 function splitMajorName(major) {
   const year = major.date ? major.date.slice(0, 4) : (major.name.match(/^(\d{4})/)?.[1] || '');
-  const label = major.name.replace(/^\d{4}\s+/, '');
+  const label = SHORT_EVENT_LABEL[major.eventType] || major.name.replace(/^\d{4}\s+/, '');
   return { label, year };
 }
 
@@ -883,6 +892,9 @@ function PayoutMatrixTable({ matrix }) {
               >
                 Total
               </th>
+              <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right align-bottom pb-1.5 px-1.5 whitespace-nowrap border-l border-border">
+                Entries
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -919,6 +931,9 @@ function PayoutMatrixTable({ matrix }) {
                       {fm(row.total)}
                     </button>
                   </td>
+                  <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums text-muted whitespace-nowrap border-l border-border">
+                    {row.major.entryCount ?? '—'}
+                  </td>
                 </tr>
               );
             })}
@@ -936,6 +951,9 @@ function PayoutMatrixTable({ matrix }) {
               ))}
               <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-semibold whitespace-nowrap border-l border-border">
                 {fm(grandTotal)}
+              </td>
+              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums font-semibold whitespace-nowrap border-l border-border">
+                {rows.reduce((a, r) => a + (r.major.entryCount || 0), 0)}
               </td>
             </tr>
           </tbody>
