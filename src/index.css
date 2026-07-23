@@ -30,3 +30,13 @@ input[type="range"]::-webkit-slider-thumb {
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* Top header: same idea for the notch/status-bar safe area. Only matters
+   once the app is running standalone (saved to the home screen) with
+   apple-mobile-web-app-status-bar-style=black-translucent (index.html) —
+   that mode renders the status bar as a transparent overlay ON TOP of the
+   page instead of reserving space for it, so without this the sticky
+   header's own title collides with the clock/battery/wifi icons. */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
