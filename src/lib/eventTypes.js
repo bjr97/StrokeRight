@@ -5,6 +5,7 @@ export const EVENT_TYPES = [
   { value: 'us_open', label: 'US Open' },
   { value: 'pga',     label: 'PGA Championship' },
   { value: 'open',    label: 'Open Championship' },
+  { value: 'tour_championship', label: 'TOUR Championship' },
   { value: 'other',   label: 'Other' },
 ];
 
@@ -26,6 +27,7 @@ export const EVENT_TYPE_EMOJI = {
   open: '🏆',
   wm_open: '🗑️',
   players: '🏝️',
+  tour_championship: '🏁',
 };
 
 export function eventTypeEmoji(value) {
@@ -43,6 +45,7 @@ const NAME_TEMPLATE = {
   us_open: 'US Open',
   pga: 'PGA Championship',
   open: 'Open Championship',
+  tour_championship: 'TOUR Championship',
 };
 
 // Auto-generates "{year} {template}" from an event type + any date string
@@ -57,13 +60,14 @@ export function autoTournamentName(eventType, dateStr) {
   return `${year} ${template}`;
 }
 
-// These 3 events are always played at the same course every year (unlike
+// These events are always played at the same course every year (unlike
 // the US Open / PGA Championship / Open Championship, which rotate venues),
 // so the course can be locked in the same way the tournament name is.
 export const FIXED_COURSES = {
   wm_open: 'TPC Scottsdale',
   players: 'TPC Sawgrass',
   masters: 'Augusta National',
+  tour_championship: 'East Lake Golf Club',
 };
 
 export function fixedCourse(eventType) {
