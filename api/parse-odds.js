@@ -54,8 +54,10 @@ ${text}`;
       throw new Error(`Anthropic ${aiRes.status}: ${errText.slice(0, 500)}`);
     }
     const aiJson = await aiRes.json();
-    let raw = aiJson?.content?.[0]?.text?.trim();
-    if (!raw) throw new Error(`Anthropic returned no text. stop_reason=${aiJson?.stop_reason} content=${JSON.stringify(aiJson?.content)} keys=${Object.keys(aiJson || {}).join(',')}`);
+    // Response content can include a leading "thinking" block before the
+    // actual text block — find the text block by type, don't assume [0].
+    let raw = aiJson?.content?.find((c) => c.type === 'text')?.text?.trim();
+    if (!raw) throw new Error('Anthropic returned no text.');
 
     // Defensive: strip markdown code fences if the model added them anyway.
     raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();

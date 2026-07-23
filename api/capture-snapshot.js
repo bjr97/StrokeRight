@@ -316,7 +316,9 @@ Write the Round ${espnRound} update now.`;
   });
   if (!aiRes.ok) throw new Error(`Anthropic ${aiRes.status}: ${(await aiRes.text().catch(() => '')).slice(0, 300)}`);
   const aiJson = await aiRes.json();
-  const text = aiJson?.content?.[0]?.text?.trim();
+  // Response content can include a leading "thinking" block before the
+  // actual text block — find the text block by type, don't assume [0].
+  const text = aiJson?.content?.find((c) => c.type === 'text')?.text?.trim();
   if (!text) throw new Error('Anthropic returned no text.');
 
   const nextRounds = { ...rounds, [String(espnRound)]: text };
