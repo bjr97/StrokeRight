@@ -1967,10 +1967,12 @@ function GolferScoreList({ rows }) {
   );
 }
 
-// One brand-green scale (light -> dark, #3FB950 is the exact accent color
-// used everywhere else in the app) that every pie chart draws its slice
-// colors from, light to dark, instead of a mixed rainbow palette.
-const GREEN_SCALE = ['#B7F5C5', '#8FE3A0', '#6EDB85', '#56D364', '#3FB950', '#2EA043', '#23863A', '#1A6E30', '#135227', '#0D3D1D'];
+// One brand-green scale, light -> deep forest, that every pie chart draws
+// its slice colors from instead of a mixed rainbow palette. Anchored on two
+// colors already used elsewhere in the app (#7DC991 light green / #3FB950
+// accent, see tailwind.config.js tier colors) and stretched down to a much
+// darker forest green at the bottom for real contrast between slices.
+const GREEN_SCALE = ['#7DC991', '#63C27E', '#4FBB6C', '#3FB950', '#359F46', '#2B853C', '#216B31', '#185427', '#103D1B', '#0A2A10'];
 
 const MC_COLORS = [GREEN_SCALE[1], GREEN_SCALE[4], GREEN_SCALE[6], GREEN_SCALE[9]]; // 0/1/2/3+ MC, light (best) -> dark (worst)
 const TIER_HEX = { 1: GREEN_SCALE[0], 2: GREEN_SCALE[2], 3: GREEN_SCALE[4], 4: GREEN_SCALE[6], 5: GREEN_SCALE[8], 6: GREEN_SCALE[9] };
