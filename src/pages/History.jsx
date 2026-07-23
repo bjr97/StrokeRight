@@ -1656,9 +1656,7 @@ function GolferBars({ rows, onSelect, maxHeight }) {
             className={`flex items-center gap-2 w-full ${onSelect ? 'hover:bg-bg rounded' : ''}`}
           >
             <span className="w-5 text-right text-xs text-muted">{i + 1}</span>
-            <span className="w-32 sm:w-40 flex items-center gap-1.5 text-sm truncate">
-              <TierDot tier={g.tier} />{g.name}
-            </span>
+            <span className="w-32 sm:w-40 text-sm truncate">{g.name}</span>
             <div className="flex-1 bg-border rounded h-2 overflow-hidden">
               <div className="bg-accent h-full rounded" style={{ width: `${(g.count / max) * 100}%` }} />
             </div>
@@ -1948,7 +1946,6 @@ function GolferScoreList({ rows }) {
                 <td className="py-1.5 sm:py-2 px-1.5">
                   <span className="flex items-center gap-1.5">
                     <span className="w-4 text-right text-muted">{i + 1}</span>
-                    <TierDot tier={g.tier} />
                     <span className="truncate">{g.name}</span>
                   </span>
                 </td>
