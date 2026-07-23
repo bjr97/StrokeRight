@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts';
 import { storage, keys, listTournaments } from '../lib/storage.js';
-import { buildMajors, getStrokerWins, trophyCaseEmojis, formatRank, getStrokerRows } from '../lib/majors.js';
+import { buildMajors, getStrokerWins, trophyCaseEmojis, formatRank, getStrokerRows, groupSummaryPayouts } from '../lib/majors.js';
 import { buildMatchLeaderboard, highRoller, untouchable, biggestRivalry, getPlayerMatches } from '../lib/matchStats.js';
 import { scoreGolfer } from '../lib/scoring.js';
 import { fmtMoney as fm } from '../lib/payouts.js';
@@ -27,6 +27,7 @@ export default function History({ session, refreshAll }) {
   const [editing, setEditing] = useState(null);
   const [trophyFor, setTrophyFor] = useState(null);
   const [podiumFor, setPodiumFor] = useState(null); // { name, finishes } or null
+  const [moneyWonFor, setMoneyWonFor] = useState(null); // { name, finishes, total } or null
   const [golferWinDetail, setGolferWinDetail] = useState(null); // { name, tier, details } or null
   const [pickPieFor, setPickPieFor] = useState(null); // golfer name, or null
 
@@ -291,6 +292,14 @@ export default function History({ session, refreshAll }) {
             if (payout <= 0) continue;
             add(r.entry.name, { entryNum: r.entry.entryNum, rankLabel: formatRank(r.rank, m.ranked), payout, scored: r.scored, points: r.total });
           }
+        } else if (m.summaryPayouts?.length) {
+          // Multi-place summary backfill (payout-only import) — every paid
+          // place, not just the winner's.
+          for (const g of groupSummaryPayouts(m.summaryPayouts)) {
+            for (const p of g.entries) {
+              add(p.name, { entryNum: null, rankLabel: g.rankLabel, payout: p.prize, scored: null, points: g.place === 1 ? m.points : null });
+            }
+          }
         } else if (m.prize != null) {
           const winnerNames = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
           if (winnerNames.length) {
@@ -346,6 +355,8 @@ export default function History({ session, refreshAll }) {
       let majorPaid = 0;
       if (m.fullData && m.payouts) {
         for (const amt of m.payouts.values()) majorPaid += amt;
+      } else if (m.summaryPayouts?.length) {
+        for (const p of m.summaryPayouts) majorPaid += p.prize;
       } else if (m.prize != null) {
         majorPaid += m.prize;
       }
@@ -624,7 +635,7 @@ export default function History({ session, refreshAll }) {
 
       {tab === 'strokers' && (
         <div className="space-y-4">
-          <StrokerTable rows={sortedStrokers} sort={gSort} onSort={toggleGSort} strokerWins={strokerWins} onOpenTrophy={setTrophyFor} onOpenPodium={setPodiumFor} />
+          <StrokerTable rows={sortedStrokers} sort={gSort} onSort={toggleGSort} strokerWins={strokerWins} onOpenTrophy={setTrophyFor} onOpenPodium={setPodiumFor} onOpenMoneyWon={setMoneyWonFor} />
           <p className="text-xs text-muted">
             $ Won includes paid finishes that weren't wins (e.g. a 2nd place that cashed a payout).
             Entries / $ Spent / ROI / Paid-no-win only reflect majors with full data. ROI is net return —
@@ -715,6 +726,22 @@ export default function History({ session, refreshAll }) {
       {podiumFor && (
         <PodiumFinishesModal name={podiumFor.name} finishes={podiumFor.finishes} onClose={() => setPodiumFor(null)} />
       )}
+      {moneyWonFor && (
+        <RowsModal
+          title={moneyWonFor.name}
+          subtitle={`${fm(moneyWonFor.total)} all-time`}
+          chart={<PlaceBreakdownChart items={moneyWonFor.finishes} rankOf={(f) => f.rank} />}
+          rows={[...moneyWonFor.finishes]
+            .sort((a, b) => new Date(b.date) - new Date(a.date))
+            .map((f, i) => ({
+              key: i,
+              primary: f.major,
+              secondary: `${fmtDate(f.date)} · ${f.rank}`,
+              value: fm(f.payout),
+            }))}
+          onClose={() => setMoneyWonFor(null)}
+        />
+      )}
       {golferWinDetail && (
         <RowsModal
           title={
@@ -750,7 +777,7 @@ export default function History({ session, refreshAll }) {
 // Fun Stats drill-downs (stroker rankings, per-major logs, pie-slice
 // detail, golfer appearance history) so there's one modal to get right
 // instead of a dozen near-identical ones.
-function RowsModal({ title, subtitle, rows, onClose, emptyText }) {
+function RowsModal({ title, subtitle, rows, onClose, emptyText, chart }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
       <div className="bg-card border border-border rounded-xl w-full max-w-md p-5 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -761,6 +788,7 @@ function RowsModal({ title, subtitle, rows, onClose, emptyText }) {
           </div>
           <button onClick={onClose} className="text-muted hover:text-text text-sm px-2 shrink-0">✕</button>
         </div>
+        {chart}
         {!rows?.length ? (
           <div className="text-sm text-muted">{emptyText || 'No data yet.'}</div>
         ) : (
@@ -806,7 +834,7 @@ function NamePickerModal({ title, names, onPick, onClose }) {
 function PodiumFinishesModal({ name, finishes, title, emptyText, onClose }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <div className="font-medium">{title || `${name} — paid, no win`}</div>
           <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
@@ -815,11 +843,12 @@ function PodiumFinishesModal({ name, finishes, title, emptyText, onClose }) {
           <div className="text-sm text-muted">{emptyText || 'No paid-no-win finishes yet.'}</div>
         ) : (
           <div className="space-y-2">
+            <PlaceBreakdownChart items={finishes} rankOf={(f) => f.rank} />
             {finishes.map((f, i) => (
               <div key={i} className="flex items-center justify-between text-sm py-1 border-b border-border last:border-b-0">
                 <div className="min-w-0">
                   <div className="text-text truncate">{f.major}</div>
-                  <div className="text-xs text-muted">{fmtDate(f.date)} · {f.rank} · {f.points >= 0 ? '+' : ''}{f.points} pts</div>
+                  <div className="text-xs text-muted">{fmtDate(f.date)} · {f.rank}{f.points != null ? ` · ${f.points >= 0 ? '+' : ''}${f.points} pts` : ''}</div>
                 </div>
                 <div className="text-accent font-medium tabular-nums shrink-0 ml-3">{fm(f.payout)}</div>
               </div>
@@ -917,7 +946,7 @@ function MajorCard({ m, expanded, onToggleExpand, isAdmin, onEdit, onDelete }) {
   );
 }
 
-function StrokerTable({ rows, sort, onSort, strokerWins, onOpenTrophy, onOpenPodium }) {
+function StrokerTable({ rows, sort, onSort, strokerWins, onOpenTrophy, onOpenPodium, onOpenMoneyWon }) {
   const cols = [
     { key: 'name', label: 'Stroker', left: true },
     { key: 'wins', label: 'Wins' },
@@ -970,7 +999,16 @@ function StrokerTable({ rows, sort, onSort, strokerWins, onOpenTrophy, onOpenPod
                   </button>
                 ) : (r.podiumOnly ?? '—')}
               </td>
-              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-accent whitespace-nowrap">{fm(r.moneyWon)}</td>
+              <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-accent whitespace-nowrap">
+                {r.moneyWon > 0 && r.allPaidFinishes?.length ? (
+                  <button
+                    onClick={() => onOpenMoneyWon({ name: r.name, finishes: r.allPaidFinishes, total: r.moneyWon })}
+                    className="underline decoration-dotted underline-offset-2 hover:opacity-80"
+                  >
+                    {fm(r.moneyWon)}
+                  </button>
+                ) : fm(r.moneyWon)}
+              </td>
               <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted">{r.entries ?? '—'}</td>
               <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums text-muted whitespace-nowrap">{r.feesPaid != null ? fm(r.feesPaid) : '—'}</td>
               <td className="py-1.5 sm:py-2 px-0.5 sm:px-1.5 text-right tabular-nums whitespace-nowrap">{r.roi != null ? `${(r.roi * 100).toFixed(0)}%` : '—'}</td>
@@ -1196,11 +1234,12 @@ function StrokerSummaryModal({ strokerName, rows, total, onClose }) {
     .sort((a, b) => new Date(b.major.date) - new Date(a.major.date));
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <div className="font-medium">{strokerName}</div>
           <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
         </div>
+        <PlaceBreakdownChart items={flat} rankOf={(item) => item.rankLabel} />
         <div className="space-y-2">
           {flat.map((item, i) => (
             <div key={i} className="flex items-center justify-between text-sm">
@@ -1729,6 +1768,54 @@ function GolferScoreList({ rows }) {
 const MC_COLORS = ['#3FB950', '#D29922', '#F0883E', '#F85149'];
 const TIER_HEX = { 1: '#58A6FF', 2: '#D29922', 3: '#3FB950', 4: '#79C0FF', 5: '#7DC991', 6: '#D2D250' };
 const PICK_PIE_COLORS = ['#58A6FF', '#3FB950', '#D29922', '#F85149', '#79C0FF', '#7DC991', '#D2D250', '#F0883E', '#A371F7', '#DB61A2'];
+const PLACE_PIE_COLORS = ['#D29922', '#8B949E', '#B87333', '#58A6FF', '#3FB950', '#F85149', '#79C0FF', '#7DC991'];
+
+// Buckets a list of paid finishes by finishing place — "T3rd" and "3rd"
+// both land in the same "3rd" bucket, since a tie is still that place.
+// `rankOf` pulls the rank-label string off whatever item shape the caller
+// has (PodiumFinishesModal's `f.rank`, StrokerSummaryModal's `item.rankLabel`, etc).
+function groupByPlace(items, rankOf) {
+  const buckets = new Map(); // placeNum -> { label, count, items: [] }
+  for (const item of items) {
+    const raw = rankOf(item);
+    if (!raw) continue;
+    const label = raw.replace(/^T/, '');
+    const placeNum = parseInt(label, 10);
+    if (!Number.isFinite(placeNum)) continue;
+    const bucket = buckets.get(placeNum) || { placeNum, label, count: 0, items: [] };
+    bucket.count += 1;
+    bucket.items.push(item);
+    buckets.set(placeNum, bucket);
+  }
+  return [...buckets.values()].sort((a, b) => a.placeNum - b.placeNum);
+}
+
+// Small "stat overview" pie — count of finishes by place, dropped into the
+// top of a popup that already lists the finishes individually below it.
+function PlaceBreakdownChart({ items, rankOf }) {
+  const groups = useMemo(() => groupByPlace(items, rankOf), [items]);
+  if (groups.length < 2) return null; // one place only — a pie of one slice says nothing
+  const total = groups.reduce((a, g) => a + g.count, 0);
+  const data = groups.map((g) => ({ name: g.label, value: g.count, pct: Math.round((g.count / total) * 100) }));
+  return (
+    <div style={{ width: '100%', height: 200 }} className="mb-3">
+      <ResponsiveContainer>
+        <PieChart>
+          <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={(d) => `${d.name}: ${d.pct}%`}>
+            {data.map((d, i) => (
+              <Cell key={d.name} fill={PLACE_PIE_COLORS[i % PLACE_PIE_COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip
+            contentStyle={{ background: '#161B22', border: '1px solid #21262D', borderRadius: 8 }}
+            labelStyle={{ color: '#E6EDF3' }}
+            formatter={(value, name, props) => [`${value} finish${value === 1 ? '' : 'es'} (${props.payload.pct}%)`, name]}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
 // "Most picked golfers overall" drill-down: this golfer's full pick log,
 // grouped by stroker / event type / year (toggle), with an optional

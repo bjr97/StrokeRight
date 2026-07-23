@@ -437,6 +437,7 @@ function toHistoryRow(h) {
     points: h.points,
     entries: h.entries,
     prize: h.prize,
+    payouts: h.payouts,
     event_type: h.eventType || 'other',
   };
 }
@@ -450,6 +451,7 @@ function fromHistoryRow(r) {
     points: r.points,
     entries: r.entries,
     prize: r.prize,
+    payouts: r.payouts || null,
     eventType: r.event_type || 'other',
   };
 }

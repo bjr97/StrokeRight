@@ -8,6 +8,40 @@ const UNDERDOG_TEAM_AVG_THRESHOLD = 9000; // whole-team average odds this long c
 const NAIL_BITER_MARGIN = 3;            // won by this many points or fewer
 const RUNAWAY_MARGIN = 10;              // won by this many points or more
 
+// "1st"/"2nd"/"3rd"/"4th"... for a bare place number — used for summary-only
+// majors' multi-place payouts, which don't have a full ranked entry list to
+// derive a tie-aware label from the way formatRank() does.
+function ordinalSuffix(n) {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+// Groups a summary-only major's flat payouts list ([{place, name, prize}])
+// by place, sorted low-to-high, with a tie-aware rank label ("T2nd" when
+// more than one name shares a place). Shared by the Events & payouts table
+// and getStrokerRows() below so both read the same tie logic.
+export function groupSummaryPayouts(payouts) {
+  const byPlace = new Map();
+  for (const p of payouts || []) {
+    const arr = byPlace.get(p.place) || [];
+    arr.push(p);
+    byPlace.set(p.place, arr);
+  }
+  return [...byPlace.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([place, entries]) => ({
+      place,
+      rankLabel: entries.length > 1 ? `T${ordinalSuffix(place)}` : ordinalSuffix(place),
+      entries,
+    }));
+}
+
 // Builds the unified "majors" list used by both the History page and the
 // Home page's recent-majors section.
 //
@@ -61,6 +95,7 @@ export function buildMajors() {
       points: h.points,
       entryCount: h.entries,
       prize: h.prize,
+      summaryPayouts: h.payouts || [],
     }));
 
   // Highlights are computed in a second pass, once every major is assembled —
@@ -389,19 +424,52 @@ export function formatRank(rank, rankedList) {
  * between the two places it's shown.
  */
 export function getStrokerRows(majors, allTournaments) {
-  const legacy = new Map(); // name -> { wins, moneyWon } — from summary-only majors
+  const legacy = new Map(); // name -> { wins, moneyWon, podiumOnly, podiumFinishes } — from summary-only majors
   const full = new Map();   // name -> { entries, feesPaid, winsFull, podiumOnly, moneyFull, oddsSum, oddsCount, podiumFinishes }
+
+  function legacyRec(name) {
+    const rec = legacy.get(name) || { wins: 0, moneyWon: 0, podiumOnly: 0, podiumFinishes: [], allPaidFinishes: [] };
+    legacy.set(name, rec);
+    return rec;
+  }
 
   for (const m of majors) {
     if (m.fullData) continue;
     const winnerNames = (m.winner || '').split(' & ').map((s) => s.trim()).filter(Boolean);
     if (winnerNames.length && m.prize != null) {
       const share = m.prize / winnerNames.length;
+      const rankLabel = winnerNames.length > 1 ? 'T1st' : '1st';
       for (const w of winnerNames) {
-        const rec = legacy.get(w) || { wins: 0, moneyWon: 0 };
+        const rec = legacyRec(w);
         rec.wins += 1;
         rec.moneyWon += share;
-        legacy.set(w, rec);
+        rec.allPaidFinishes.push({
+          major: m.name, date: m.date, eventType: m.eventType,
+          rank: rankLabel, payout: share, points: m.points ?? null,
+        });
+      }
+    }
+
+    // Non-winner paid places from a multi-place summary backfill (e.g. a
+    // payout-only import that has 2nd/3rd place money but no full
+    // entries/leaderboard) — same "paid, no win" bucket full-data majors
+    // feed via their own podiumFinishes below.
+    if (m.summaryPayouts?.length) {
+      const groups = groupSummaryPayouts(m.summaryPayouts);
+      const winnerPlace = groups[0]?.place;
+      for (const g of groups) {
+        if (g.place === winnerPlace) continue;
+        for (const p of g.entries) {
+          const rec = legacyRec(p.name);
+          rec.moneyWon += p.prize;
+          rec.podiumOnly += 1;
+          const finish = {
+            major: m.name, date: m.date, eventType: m.eventType,
+            rank: g.rankLabel, payout: p.prize, points: null,
+          };
+          rec.podiumFinishes.push(finish);
+          rec.allPaidFinishes.push(finish);
+        }
       }
     }
   }
@@ -463,18 +531,20 @@ export function getStrokerRows(majors, allTournaments) {
 
   const names = new Set([...legacy.keys(), ...full.keys()]);
   return [...names].map((name) => {
-    const l = legacy.get(name) || { wins: 0, moneyWon: 0 };
+    const l = legacy.get(name) || { wins: 0, moneyWon: 0, podiumOnly: 0, podiumFinishes: [], allPaidFinishes: [] };
     const f = full.get(name);
     // ROI = (gain - cost) / cost — net return, not the raw payout multiple.
     const roi = f && f.feesPaid > 0 ? (f.moneyFull - f.feesPaid) / f.feesPaid : null;
     const avgPickOdds = f && f.oddsCount > 0 ? f.oddsSum / f.oddsCount : null;
+    const hasPodiumData = !!f || l.podiumOnly > 0;
     return {
       name,
       wins: l.wins + (f?.winsFull || 0),
       moneyWon: l.moneyWon + (f?.moneyFull || 0),
-      podiumOnly: f ? f.podiumOnly : null,
-      podiumFinishes: f ? f.podiumFinishes : [],
+      podiumOnly: hasPodiumData ? (f?.podiumOnly || 0) + l.podiumOnly : null,
+      podiumFinishes: [...(f?.podiumFinishes || []), ...l.podiumFinishes],
       allFinishes: f ? f.allFinishes : [],
+      allPaidFinishes: [...(f ? f.allFinishes.filter((x) => x.payout > 0) : []), ...l.allPaidFinishes],
       entries: f ? f.entries : null,
       feesPaid: f ? f.feesPaid : null,
       roi,
