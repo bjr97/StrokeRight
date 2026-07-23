@@ -366,24 +366,31 @@ function ManageTournaments({ active, refreshAll, onEdit }) {
         ))}
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <Select value={sortBy} onChange={setSortBy} options={SORT_OPTIONS} className="text-sm" />
-        <Select
-          value={eventTypeFilter}
-          onChange={setEventTypeFilter}
-          options={[{ value: 'all', label: 'All events' }, ...EVENT_TYPES]}
-          className="text-sm"
-        />
-        <Select
-          value={winnerFilter}
-          onChange={setWinnerFilter}
-          options={[{ value: '', label: 'All winners' }, ...winnerNames.map((n) => ({ value: n, label: n }))]}
-          className="text-sm"
-        />
+      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
+          <Select
+            value={sortBy}
+            onChange={setSortBy}
+            options={SORT_OPTIONS}
+            className="flex-1 min-w-0 !px-2 py-1.5 text-xs sm:text-sm overflow-hidden text-ellipsis whitespace-nowrap"
+          />
+          <Select
+            value={eventTypeFilter}
+            onChange={setEventTypeFilter}
+            options={[{ value: 'all', label: 'All events' }, ...EVENT_TYPES]}
+            className="flex-1 min-w-0 !px-2 py-1.5 text-xs sm:text-sm overflow-hidden text-ellipsis whitespace-nowrap"
+          />
+          <Select
+            value={winnerFilter}
+            onChange={setWinnerFilter}
+            options={[{ value: '', label: 'All winners' }, ...winnerNames.map((n) => ({ value: n, label: n }))]}
+            className="flex-1 min-w-0 !px-2 py-1.5 text-xs sm:text-sm overflow-hidden text-ellipsis whitespace-nowrap"
+          />
+        </div>
         {(eventTypeFilter !== 'all' || winnerFilter) && (
           <button
             onClick={() => { setEventTypeFilter('all'); setWinnerFilter(''); }}
-            className="text-xs text-muted hover:text-text underline"
+            className="text-xs text-muted hover:text-text underline shrink-0"
           >
             Clear filters
           </button>
