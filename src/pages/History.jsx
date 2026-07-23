@@ -20,7 +20,7 @@ const TABS = [
 
 export default function History({ session, refreshAll }) {
   const [tab, setTab] = useState('majors');
-  const [majorWinnerFilter, setMajorWinnerFilter] = useState('');
+  const [strokerFilter, setStrokerFilter] = useState('');
   const [gSort, setGSort] = useState({ key: 'moneyWon', dir: -1 });
   const [mSort, setMSort] = useState({ key: 'wins', dir: -1 });
   const [expandedId, setExpandedId] = useState(null);
@@ -81,23 +81,14 @@ export default function History({ session, refreshAll }) {
       .map((m) => ({ ...m, recap: storage.get(keys.recap(m.id))?.final || null }));
   }, [allMajors, eventTypeFilter, yearFilter]);
 
-  const majorWinnerNames = useMemo(() => {
-    const names = new Set();
-    for (const m of majors) {
-      if (!m.winner) continue;
-      for (const n of m.winner.split(' & ').map((s) => s.trim()).filter(Boolean)) names.add(n);
-    }
-    return [...names].sort((a, b) => a.localeCompare(b));
-  }, [majors]);
-
   const sortedMajors = useMemo(() => {
     const list = majors.filter((m) => {
-      if (!majorWinnerFilter) return true;
-      return (m.winner || '').split(' & ').map((s) => s.trim()).includes(majorWinnerFilter);
+      if (!strokerFilter) return true;
+      return (m.winner || '').split(' & ').map((s) => s.trim()).includes(strokerFilter);
     });
     list.sort((a, b) => new Date(b.date) - new Date(a.date));
     return list;
-  }, [majors, majorWinnerFilter]);
+  }, [majors, strokerFilter]);
 
   // ─── Stroker + golfer aggregation ────────────────────────────────────────
   // Wins & $ won: across every major (full data or summary) — and for
@@ -264,6 +255,24 @@ export default function History({ session, refreshAll }) {
     setGSort((s) => (s.key === key ? { key, dir: s.dir * -1 } : { key, dir: -1 }));
   }
 
+  // Every stroker who shows up anywhere (majors, entries, or 1v1 matches) —
+  // the shared "Stroker" filter's option list, used across Past majors,
+  // Stroker leaderboard, Events & payouts, and 1v1 Leaderboard.
+  const allStrokerNames = useMemo(() => {
+    const names = new Set([...strokerRows.map((r) => r.name), ...matchRows.map((r) => r.name)]);
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [strokerRows, matchRows]);
+
+  const filteredStrokers = useMemo(
+    () => (strokerFilter ? sortedStrokers.filter((r) => r.name === strokerFilter) : sortedStrokers),
+    [sortedStrokers, strokerFilter]
+  );
+
+  const filteredMatchRows = useMemo(
+    () => (strokerFilter ? sortedMatchRows.filter((r) => r.name === strokerFilter) : sortedMatchRows),
+    [sortedMatchRows, strokerFilter]
+  );
+
   // Events x payouts matrix: rows = majors (newest first), columns = every
   // stroker who's cashed a payout at least once (sorted by all-time total,
   // highest first), respecting the page's event-type/year filters like
@@ -328,6 +337,17 @@ export default function History({ session, refreshAll }) {
 
     return { rows: rowsByMajor, strokers, grandTotal };
   }, [majors]);
+
+  // Narrows the matrix to one stroker's column when the shared Stroker
+  // filter is set — drops rows where they never cashed, too, so the table
+  // doesn't fill up with dashes.
+  const filteredPayoutMatrix = useMemo(() => {
+    if (!strokerFilter) return payoutMatrix;
+    const strokers = payoutMatrix.strokers.filter((s) => s.name === strokerFilter);
+    const rows = payoutMatrix.rows.filter((r) => r.cells.has(strokerFilter));
+    const grandTotal = strokers.reduce((a, s) => a + s.total, 0);
+    return { rows, strokers, grandTotal };
+  }, [payoutMatrix, strokerFilter]);
 
   const fun = useMemo(() => {
     if (!majors.length) return null;
@@ -579,9 +599,15 @@ export default function History({ session, refreshAll }) {
           options={[{ value: 'all', label: 'All years' }, ...availableYears.map((y) => ({ value: y, label: y }))]}
           className="text-sm"
         />
-        {(eventTypeFilter !== 'all' || yearFilter !== 'all') && (
+        <Select
+          value={strokerFilter}
+          onChange={setStrokerFilter}
+          options={[{ value: '', label: 'All strokers' }, ...allStrokerNames.map((n) => ({ value: n, label: n }))]}
+          className="text-sm"
+        />
+        {(eventTypeFilter !== 'all' || yearFilter !== 'all' || strokerFilter) && (
           <button
-            onClick={() => { setEventTypeFilter('all'); setYearFilter('all'); }}
+            onClick={() => { setEventTypeFilter('all'); setYearFilter('all'); setStrokerFilter(''); }}
             className="text-xs text-muted hover:text-text underline"
           >
             Clear filters
@@ -591,28 +617,6 @@ export default function History({ session, refreshAll }) {
 
       {tab === 'majors' && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Select
-                value={majorWinnerFilter}
-                onChange={setMajorWinnerFilter}
-                options={[{ value: '', label: 'All winners' }, ...majorWinnerNames.map((n) => ({ value: n, label: n }))]}
-                className="text-sm"
-              />
-              {majorWinnerFilter && (
-                <button
-                  onClick={() => setMajorWinnerFilter('')}
-                  className="text-xs text-muted hover:text-text underline"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            {session?.isAdmin && (
-              <Button variant="secondary" onClick={() => setEditing({ idx: null, draft: blankRecord() })}>+ Add</Button>
-            )}
-          </div>
-
           <div className="space-y-2">
             {sortedMajors.map((m) => (
               <MajorCard
@@ -635,7 +639,7 @@ export default function History({ session, refreshAll }) {
 
       {tab === 'strokers' && (
         <div className="space-y-4">
-          <StrokerTable rows={sortedStrokers} sort={gSort} onSort={toggleGSort} strokerWins={strokerWins} onOpenTrophy={setTrophyFor} onOpenPodium={setPodiumFor} onOpenMoneyWon={setMoneyWonFor} />
+          <StrokerTable rows={filteredStrokers} sort={gSort} onSort={toggleGSort} strokerWins={strokerWins} onOpenTrophy={setTrophyFor} onOpenPodium={setPodiumFor} onOpenMoneyWon={setMoneyWonFor} />
           <p className="text-xs text-muted">
             $ Won includes paid finishes that weren't wins (e.g. a 2nd place that cashed a payout).
             Entries / $ Spent / ROI / Paid-no-win only reflect majors with full data. ROI is net return —
@@ -645,7 +649,7 @@ export default function History({ session, refreshAll }) {
 
           <div className="space-y-2">
             <div className="text-sm font-medium">Events & payouts</div>
-            <PayoutMatrixTable matrix={payoutMatrix} />
+            <PayoutMatrixTable matrix={filteredPayoutMatrix} />
             <p className="text-xs text-muted">
               Every major (rows) x every stroker who's cashed a payout at least once (columns), sorted by
               all-time total. A major with no known payout breakdown only shows the winner's cell.
@@ -656,7 +660,7 @@ export default function History({ session, refreshAll }) {
 
       {tab === 'onevone' && (
         <div className="space-y-2">
-          <MatchLeaderboardTable rows={sortedMatchRows} sort={mSort} onSort={toggleMSort} />
+          <MatchLeaderboardTable rows={filteredMatchRows} sort={mSort} onSort={toggleMSort} />
           <p className="text-xs text-muted">
             Wins / Losses / Win % / $ Wagered / Net $ only count matches whose draft finished and whose tournament
             is fully settled. Win % excludes pushes. Proposed and Declined count every match ever recorded,
@@ -1740,24 +1744,29 @@ function GolferScoreList({ rows }) {
             <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-left pb-1.5 px-1.5">Golfer</th>
             <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Events</th>
             <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Cumulative</th>
+            <th className="text-[9px] sm:text-[11px] uppercase tracking-wide text-muted text-right pb-1.5 px-1.5">Avg/Event</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((g, i) => (
-            <tr key={g.name} className="border-t border-border">
-              <td className="py-1.5 sm:py-2 px-1.5">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-4 text-right text-muted">{i + 1}</span>
-                  <TierDot tier={g.tier} />
-                  <span className="truncate">{g.name}</span>
-                </span>
-              </td>
-              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums text-muted">{g.majorsCount}</td>
-              <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums">{g.sum >= 0 ? `+${g.sum}` : g.sum}</td>
-            </tr>
-          ))}
+          {rows.map((g, i) => {
+            const avg = g.majorsCount ? g.sum / g.majorsCount : 0;
+            return (
+              <tr key={g.name} className="border-t border-border">
+                <td className="py-1.5 sm:py-2 px-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-4 text-right text-muted">{i + 1}</span>
+                    <TierDot tier={g.tier} />
+                    <span className="truncate">{g.name}</span>
+                  </span>
+                </td>
+                <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums text-muted">{g.majorsCount}</td>
+                <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums">{g.sum >= 0 ? `+${g.sum}` : g.sum}</td>
+                <td className="py-1.5 sm:py-2 px-1.5 text-right tabular-nums text-muted">{avg >= 0 ? `+${avg.toFixed(1)}` : avg.toFixed(1)}</td>
+              </tr>
+            );
+          })}
           {!rows.length && (
-            <tr><td colSpan={3} className="py-4 text-center text-muted text-sm">No full pick data yet.</td></tr>
+            <tr><td colSpan={4} className="py-4 text-center text-muted text-sm">No full pick data yet.</td></tr>
           )}
         </tbody>
       </table>
@@ -1823,8 +1832,8 @@ function PlaceBreakdownChart({ items, rankOf }) {
 // "how has Charles's picking of Scottie trended by year" as well as the
 // pool-wide view. Clicking a slice shows the underlying picks.
 function GolferPickPieModal({ name, log, onClose }) {
-  const [groupBy, setGroupBy] = useState('stroker'); // 'stroker' | 'eventType' | 'year'
-  const [strokerFilter, setStrokerFilter] = useState('');
+  const [groupBy, setGroupBy] = useState('eventType'); // 'eventType' | 'year'
+  const [pieStrokerFilter, setPieStrokerFilter] = useState('');
   const [sliceDetail, setSliceDetail] = useState(null); // { label, rows } or null
 
   const strokerNames = useMemo(
@@ -1833,12 +1842,11 @@ function GolferPickPieModal({ name, log, onClose }) {
   );
 
   const filteredLog = useMemo(
-    () => (strokerFilter ? log.filter((p) => p.strokerName === strokerFilter) : log),
-    [log, strokerFilter]
+    () => (pieStrokerFilter ? log.filter((p) => p.strokerName === pieStrokerFilter) : log),
+    [log, pieStrokerFilter]
   );
 
   const keyFor = (p) => {
-    if (groupBy === 'stroker') return p.strokerName;
     if (groupBy === 'eventType') return eventTypeLabel(p.major.eventType);
     return (p.major.date || '').slice(0, 4) || 'Unknown';
   };
@@ -1871,7 +1879,7 @@ function GolferPickPieModal({ name, log, onClose }) {
     setSliceDetail({ label, rows });
   }
 
-  const GROUP_LABELS = { stroker: 'By stroker', eventType: 'By event type', year: 'By year' };
+  const GROUP_LABELS = { eventType: 'By event type', year: 'By year' };
 
   return (
     <>
@@ -1882,11 +1890,11 @@ function GolferPickPieModal({ name, log, onClose }) {
             <button onClick={onClose} className="text-muted hover:text-text text-sm px-2">✕</button>
           </div>
           <div className="text-xs text-muted mb-3">
-            {filteredLog.length} pick{filteredLog.length === 1 ? '' : 's'}{strokerFilter ? ` by ${strokerFilter}` : ' total'}
+            {filteredLog.length} pick{filteredLog.length === 1 ? '' : 's'}{pieStrokerFilter ? ` by ${pieStrokerFilter}` : ' total'}
           </div>
 
           <div className="flex gap-2 mb-3 flex-wrap">
-            {['stroker', 'eventType', 'year'].map((key) => (
+            {['eventType', 'year'].map((key) => (
               <button
                 key={key}
                 onClick={() => setGroupBy(key)}
@@ -1897,10 +1905,10 @@ function GolferPickPieModal({ name, log, onClose }) {
             ))}
           </div>
 
-          {groupBy !== 'stroker' && strokerNames.length > 1 && (
+          {strokerNames.length > 1 && (
             <Select
-              value={strokerFilter}
-              onChange={setStrokerFilter}
+              value={pieStrokerFilter}
+              onChange={setPieStrokerFilter}
               options={[{ value: '', label: 'All strokers' }, ...strokerNames.map((n) => ({ value: n, label: n }))]}
               className="w-full mb-3"
             />
@@ -2389,9 +2397,6 @@ function FunStats({ fun, oneVOne, strokerRows, golferHistory, payoutMatrix, onOp
   );
 }
 
-function blankRecord() {
-  return { id: '', name: '', date: '', winner: '', team: [], points: 0, entries: 0, prize: 0, eventType: 'other' };
-}
 
 function EditModal({ record, onSave, onCancel }) {
   const [d, setD] = useState({ eventType: 'other', ...record.draft, team: (record.draft.team || []).join(', ') });
