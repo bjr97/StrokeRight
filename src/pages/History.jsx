@@ -93,7 +93,7 @@ export default function History({ session, refreshAll }) {
   // Entries / $ spent / ROI / podiums / golfer picks: only from full-data
   // majors — that's the only place we know every stroker's entry and every
   // paid position, not just the winner's.
-  const { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog } = useMemo(() => {
+  const { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog, strokerPickCounts } = useMemo(() => {
     const strokerRows = getStrokerRows(majors, allTournaments);
 
     const golferCounts = new Map();
@@ -101,6 +101,7 @@ export default function History({ session, refreshAll }) {
     const golferScoreSum = new Map();   // name -> { sum, majorsCount, tier } — our fantasy points, once per event
     const golferCutTally = new Map();   // name -> { madeCut, missedCut, tier } — once per event, like golferScoreSum
     const golferHistory = new Map();    // name -> [{ major, status, points, tier, odds }] — every event picked in
+    const strokerPickCounts = new Map(); // strokerName -> Map<golferName, { count, tier, details: [] }> — for Pick Breakdown
     let longestShot = null; // { name, odds, oddsNum, strokerName, major, points, status } — worst odds ever actually picked
     let biggestFavoriteToMissCut = null; // { name, odds, oddsNum, major } — shortest odds among picks that still missed the cut
     let totalPicksLogged = 0;
@@ -123,6 +124,7 @@ export default function History({ session, refreshAll }) {
 
       let picksThisMajor = 0;
       for (const e of tEntries) {
+        const strokerMap = strokerPickCounts.get(e.name) || new Map();
         for (const gid of e.golferIds || []) {
           const g = golferLookup.get(gid);
           if (!g) continue;
@@ -139,7 +141,14 @@ export default function History({ session, refreshAll }) {
               points: scoreGolfer(g, scoreOpts).points, status: g.status,
             };
           }
+
+          const prec = strokerMap.get(g.name) || { count: 0, tier: g.tier, details: [] };
+          prec.count += 1;
+          prec.tier = g.tier;
+          prec.details.push({ major, entryNum: e.entryNum, odds: g.odds, tier: g.tier, points: scoreGolfer(g, scoreOpts).points, status: g.status });
+          strokerMap.set(g.name, prec);
         }
+        if (strokerMap.size) strokerPickCounts.set(e.name, strokerMap);
       }
       if (picksThisMajor > 0) picksLoggedLog.push({ major, count: picksThisMajor });
 
@@ -219,7 +228,7 @@ export default function History({ session, refreshAll }) {
       .sort((a, b) => b.sum - a.sum)
       .slice(0, 15);
 
-    return { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog };
+    return { strokerRows, golferRows, longestShot, totalPicksLogged, winningestGolfers, cumulativeScoreRows, golferCutTally, biggestFavoriteToMissCut, golferHistory, picksLoggedLog, strokerPickCounts };
   }, [majors, allTournaments]);
 
   const sortedStrokers = useMemo(() => {
@@ -658,6 +667,14 @@ export default function History({ session, refreshAll }) {
             Based on majors with full pick data. This gets more meaningful every time another tournament is
             marked complete.
           </p>
+
+          <div className="space-y-2 pt-2 border-t border-border">
+            <div className="text-sm font-medium">Pick breakdown</div>
+            <p className="text-xs text-muted">
+              One stroker's own picking patterns — pick a name to see their most-drafted golfers across every major.
+            </p>
+            <PickBreakdown strokerPickCounts={strokerPickCounts} />
+          </div>
         </div>
       )}
 
@@ -1396,6 +1413,70 @@ function GolferBars({ rows, onSelect }) {
       })}
       {!rows.length && <div className="text-muted text-sm">No full pick data yet.</div>}
     </Card>
+  );
+}
+
+// One stroker's own most-drafted golfers — a Map<golferName, {count, tier,
+// details}> per stroker (strokerPickCounts, built in History's main
+// aggregation) sliced down to the top 10 for whoever's selected. Tapping a
+// golfer bar shows every major/entry that pick came from.
+function PickBreakdown({ strokerPickCounts }) {
+  const [selected, setSelected] = useState('');
+  const [detail, setDetail] = useState(null); // { name, tier, details } or null
+
+  const strokerNames = useMemo(
+    () => [...strokerPickCounts.keys()].sort((a, b) => a.localeCompare(b)),
+    [strokerPickCounts]
+  );
+
+  const rows = useMemo(() => {
+    if (!selected) return [];
+    const map = strokerPickCounts.get(selected);
+    if (!map) return [];
+    return [...map.entries()]
+      .map(([name, r]) => ({ name, count: r.count, tier: r.tier, details: r.details }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [strokerPickCounts, selected]);
+
+  return (
+    <>
+      <Select
+        value={selected}
+        onChange={setSelected}
+        options={[{ value: '', label: 'Choose a stroker…' }, ...strokerNames.map((n) => ({ value: n, label: n }))]}
+        className="w-full"
+      />
+      {selected && (
+        <GolferBars
+          rows={rows}
+          onSelect={(g) => setDetail({ name: g.name, tier: g.tier, details: g.details })}
+        />
+      )}
+      {selected && !rows.length && (
+        <Card className="p-4 text-center text-muted text-sm">No full pick data for {selected} yet.</Card>
+      )}
+      {detail && (
+        <RowsModal
+          title={
+            <span className="flex items-center gap-1.5">
+              <TierDot tier={detail.tier} />{detail.name}
+            </span>
+          }
+          subtitle={`Picked by ${selected} · ${detail.details.length}×`}
+          rows={[...detail.details]
+            .sort((a, b) => new Date(b.major.date) - new Date(a.major.date))
+            .map((d, i) => ({
+              key: i,
+              primary: d.major.name,
+              secondary: `Entry ${d.entryNum} · ${d.odds} odds · Tier ${d.tier}`,
+              value: `${d.points >= 0 ? '+' : ''}${d.points} pts`,
+              valueClass: d.points >= 0 ? 'text-accent' : 'text-danger',
+            }))}
+          onClose={() => setDetail(null)}
+        />
+      )}
+    </>
   );
 }
 
