@@ -10,6 +10,13 @@ const TIER_BANDS = [
   { range: '14+ over', penalty: '−5' },
 ];
 
+const PAYOUT_BANDS = [
+  { range: '1–9', split: 'Winner take all (100%)' },
+  { range: '10–19', split: '1st: pool minus one entry fee · 2nd: entry fee refunded' },
+  { range: '20–29', split: '1st: 80% · 2nd: 20%' },
+  { range: '30+', split: '1st: 65% · 2nd: 25% · 3rd: 10%' },
+];
+
 function Section({ title, children }) {
   return (
     <Card className="p-4">
@@ -83,6 +90,33 @@ export default function Rules() {
 
       <Section title="Entry & leaderboard totals">
         <p>An entry's total score is the sum of all 6 golfers' points. Entries are ranked by total points, descending, with ties sharing the same rank (standard golf-style tie handling — if two entries tie for 2nd, both show rank 2, and the next entry jumps to rank 4).</p>
+      </Section>
+
+      <Section title="Payout structure">
+        <p>
+          The prize pool is entry count × entry fee. How it splits depends on how many entries there are that
+          tournament — bigger fields pay more places, not just a bigger 1st prize.
+        </p>
+        <table className="w-full mt-2 text-sm">
+          <thead>
+            <tr className="text-left text-muted border-b border-border">
+              <th className="py-1 font-normal">Entries</th>
+              <th className="py-1 font-normal">Payout split</th>
+            </tr>
+          </thead>
+          <tbody>
+            {PAYOUT_BANDS.map((b) => (
+              <tr key={b.range} className="border-b border-border last:border-b-0">
+                <td className="py-1.5 pr-3 text-text whitespace-nowrap">{b.range}</td>
+                <td className="py-1.5">{b.split}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="text-xs text-muted mt-2">
+          A tie consumes as many places as are tied and splits their combined payout evenly — e.g. two entries tied
+          for 1st in a 20-entry pool (80% / 20% split) each get 50% (the combined 80% + 20%, halved), not 80% each.
+        </p>
       </Section>
 
       <Section title="1v1 matches">
