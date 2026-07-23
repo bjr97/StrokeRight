@@ -1967,10 +1967,15 @@ function GolferScoreList({ rows }) {
   );
 }
 
-const MC_COLORS = ['#3FB950', '#D29922', '#F0883E', '#F85149'];
-const TIER_HEX = { 1: '#58A6FF', 2: '#D29922', 3: '#3FB950', 4: '#79C0FF', 5: '#7DC991', 6: '#D2D250' };
-const PICK_PIE_COLORS = ['#58A6FF', '#3FB950', '#D29922', '#F85149', '#79C0FF', '#7DC991', '#D2D250', '#F0883E', '#A371F7', '#DB61A2'];
-const PLACE_PIE_COLORS = ['#D29922', '#8B949E', '#B87333', '#58A6FF', '#3FB950', '#F85149', '#79C0FF', '#7DC991'];
+// One brand-green scale (light -> dark, #3FB950 is the exact accent color
+// used everywhere else in the app) that every pie chart draws its slice
+// colors from, light to dark, instead of a mixed rainbow palette.
+const GREEN_SCALE = ['#B7F5C5', '#8FE3A0', '#6EDB85', '#56D364', '#3FB950', '#2EA043', '#23863A', '#1A6E30', '#135227', '#0D3D1D'];
+
+const MC_COLORS = [GREEN_SCALE[1], GREEN_SCALE[4], GREEN_SCALE[6], GREEN_SCALE[9]]; // 0/1/2/3+ MC, light (best) -> dark (worst)
+const TIER_HEX = { 1: GREEN_SCALE[0], 2: GREEN_SCALE[2], 3: GREEN_SCALE[4], 4: GREEN_SCALE[6], 5: GREEN_SCALE[8], 6: GREEN_SCALE[9] };
+const PICK_PIE_COLORS = GREEN_SCALE;
+const PLACE_PIE_COLORS = [GREEN_SCALE[0], GREEN_SCALE[1], GREEN_SCALE[3], GREEN_SCALE[4], GREEN_SCALE[5], GREEN_SCALE[6], GREEN_SCALE[7], GREEN_SCALE[9]];
 
 // Buckets a list of paid finishes by finishing place — "T3rd" and "3rd"
 // both land in the same "3rd" bucket, since a tie is still that place.
